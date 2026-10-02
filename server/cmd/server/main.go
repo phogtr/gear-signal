@@ -46,7 +46,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           api.NewRouter(pool),
+		Handler:           api.NewRouter(store.New(pool)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

@@ -1,0 +1,50 @@
+openapi: 3.0.3
+info:
+  title: Gear Signal API
+  version: 0.1.0
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      responses:
+        "200":
+          description: Server and database are healthy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        "503":
+          description: A dependency is unhealthy
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
+  /depots:
+    get:
+      operationId: listDepots
+      responses:
+        "200":
+          description: All depots
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Depot" }
+
+components:
+  schemas:
+    Health:
+      type: object
+      required: [status, db]
+      properties:
+        status: { type: string }
+        db: { type: string }
+
+    Depot:
+      type: object
+      required: [id, name, lat, lon]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string, example: DTLA Warehouse }
+        lat: { type: number, format: double }
+        lon: { type: number, format: double }

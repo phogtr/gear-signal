@@ -52,6 +52,9 @@ build:
 lint:
 	cd server && go vet ./... && test -z "$$(gofmt -l .)" || (gofmt -l . && exit 1)
 
+gen:
+	cd server && go generate ./...
+
 
 mgr: db-up
 	$(MIGRATE) -path=/migrations -database "$(DB_URL_INTERNAL)" up
