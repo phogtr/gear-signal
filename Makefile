@@ -52,3 +52,16 @@ build:
 lint:
 	cd server && go vet ./... && test -z "$$(gofmt -l .)" || (gofmt -l . && exit 1)
 
+
+mgr: db-up
+	$(MIGRATE) -path=/migrations -database "$(DB_URL_INTERNAL)" up
+
+mgr-down: db-up
+	$(MIGRATE) -path=/migrations -database "$(DB_URL_INTERNAL)" down 1
+
+mgr-v: db-up
+	$(MIGRATE) -path=/migrations -database "$(DB_URL_INTERNAL)" version
+
+mgr-str:
+	@test -n "$(name)" || (echo "usage: make mgr-str name=add_something" && exit 1)
+	$(MIGRATE) create -ext sql -dir /migrations -seq -digits 4 $(name)

@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS telemetry;
+DROP EXTENSION IF EXISTS timescaledb;
