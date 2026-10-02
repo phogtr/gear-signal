@@ -1,0 +1,25 @@
+name: gear-signal
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg18
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gear}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gear}
+      POSTGRES_DB: ${POSTGRES_DB:-gear_signal}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}",
+        ]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  pgdata:
