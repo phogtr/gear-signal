@@ -4,3 +4,5 @@ generate:
   models: true
   chi-server: true
   strict-server: true
+compatibility:
+  always-prefix-enum-values: true

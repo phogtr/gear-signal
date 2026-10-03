@@ -7,11 +7,80 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/oapi-codegen/runtime"
 )
+
+// Defines values for TripStatus.
+const (
+	TripStatusActive    TripStatus = "active"
+	TripStatusCancelled TripStatus = "cancelled"
+	TripStatusCompleted TripStatus = "completed"
+	TripStatusScheduled TripStatus = "scheduled"
+)
+
+// Valid indicates whether the value is a known member of the TripStatus enum.
+func (e TripStatus) Valid() bool {
+	switch e {
+	case TripStatusActive:
+		return true
+	case TripStatusCancelled:
+		return true
+	case TripStatusCompleted:
+		return true
+	case TripStatusScheduled:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VehicleStatus.
+const (
+	VehicleStatusCharging    VehicleStatus = "charging"
+	VehicleStatusEnRoute     VehicleStatus = "en_route"
+	VehicleStatusIdle        VehicleStatus = "idle"
+	VehicleStatusMaintenance VehicleStatus = "maintenance"
+)
+
+// Valid indicates whether the value is a known member of the VehicleStatus enum.
+func (e VehicleStatus) Valid() bool {
+	switch e {
+	case VehicleStatusCharging:
+		return true
+	case VehicleStatusEnRoute:
+		return true
+	case VehicleStatusIdle:
+		return true
+	case VehicleStatusMaintenance:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for VehicleType.
+const (
+	VehicleTypeDieselTruck VehicleType = "diesel_truck"
+	VehicleTypeEvVan       VehicleType = "ev_van"
+)
+
+// Valid indicates whether the value is a known member of the VehicleType enum.
+func (e VehicleType) Valid() bool {
+	switch e {
+	case VehicleTypeDieselTruck:
+		return true
+	case VehicleTypeEvVan:
+		return true
+	default:
+		return false
+	}
+}
 
 // Depot defines model for Depot.
 type Depot struct {
@@ -23,10 +92,67 @@ type Depot struct {
 	Name string `json:"name"`
 }
 
+// Error defines model for Error.
+type Error struct {
+	Message string `json:"message"`
+}
+
 // Health defines model for Health.
 type Health struct {
 	Db     string `json:"db"`
 	Status string `json:"status"`
+}
+
+// Route defines model for Route.
+type Route struct {
+	// Coordinates Street-following polyline as [lng, lat] pairs
+	Coordinates     [][2]float64 `json:"coordinates"`
+	DistanceMeters  float64      `json:"distanceMeters"`
+	DurationSeconds int          `json:"durationSeconds"`
+	Id              int64        `json:"id"`
+
+	// Name Example: dtla-lax
+	Name string `json:"name"`
+}
+
+// Trip defines model for Trip.
+type Trip struct {
+	CompletedAt    *time.Time `json:"completedAt,omitempty"`
+	Eta            *time.Time `json:"eta,omitempty"`
+	Id             int64      `json:"id"`
+	RouteId        int64      `json:"routeId"`
+	ScheduledStart time.Time  `json:"scheduledStart"`
+	StartedAt      *time.Time `json:"startedAt,omitempty"`
+	Status         TripStatus `json:"status"`
+	VehicleId      int64      `json:"vehicleId"`
+}
+
+// TripStatus defines model for TripStatus.
+type TripStatus string
+
+// Vehicle defines model for Vehicle.
+type Vehicle struct {
+	DepotId int64 `json:"depotId"`
+	Id      int64 `json:"id"`
+
+	// Name Example: VAN-07
+	Name string `json:"name"`
+
+	// Plate Example: 8GSV123
+	Plate  string        `json:"plate"`
+	Status VehicleStatus `json:"status"`
+	Type   VehicleType   `json:"type"`
+}
+
+// VehicleStatus defines model for VehicleStatus.
+type VehicleStatus string
+
+// VehicleType defines model for VehicleType.
+type VehicleType string
+
+// ListTripsParams defines parameters for ListTrips.
+type ListTripsParams struct {
+	Status *TripStatus `form:"status,omitempty" json:"status,omitempty"`
 }
 
 // ServerInterface represents all server handlers.
@@ -37,6 +163,15 @@ type ServerInterface interface {
 
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
+
+	// (GET /routes)
+	ListRoutes(w http.ResponseWriter, r *http.Request)
+
+	// (GET /trips)
+	ListTrips(w http.ResponseWriter, r *http.Request, params ListTripsParams)
+
+	// (GET /vehicles)
+	ListVehicles(w http.ResponseWriter, r *http.Request)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -50,6 +185,21 @@ func (_ Unimplemented) ListDepots(w http.ResponseWriter, r *http.Request) {
 
 // (GET /health)
 func (_ Unimplemented) GetHealth(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /routes)
+func (_ Unimplemented) ListRoutes(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /trips)
+func (_ Unimplemented) ListTrips(w http.ResponseWriter, r *http.Request, params ListTripsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /vehicles)
+func (_ Unimplemented) ListVehicles(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -81,6 +231,67 @@ func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetHealth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListRoutes operation middleware
+func (siw *ServerInterfaceWrapper) ListRoutes(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRoutes(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTrips operation middleware
+func (siw *ServerInterfaceWrapper) ListTrips(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTripsParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTrips(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListVehicles operation middleware
+func (siw *ServerInterfaceWrapper) ListVehicles(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListVehicles(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -209,6 +420,15 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/depots", wrapper.ListDepots)
 	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/routes", wrapper.ListRoutes)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/vehicles", wrapper.ListVehicles)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips", wrapper.ListTrips)
+	})
 
 	return r
 }
@@ -269,6 +489,84 @@ func (response GetHealth503JSONResponse) VisitGetHealthResponse(w http.ResponseW
 	return err
 }
 
+type ListRoutesRequestObject struct {
+}
+
+type ListRoutesResponseObject interface {
+	VisitListRoutesResponse(w http.ResponseWriter) error
+}
+
+type ListRoutes200JSONResponse []Route
+
+func (response ListRoutes200JSONResponse) VisitListRoutesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTripsRequestObject struct {
+	Params ListTripsParams
+}
+
+type ListTripsResponseObject interface {
+	VisitListTripsResponse(w http.ResponseWriter) error
+}
+
+type ListTrips200JSONResponse []Trip
+
+func (response ListTrips200JSONResponse) VisitListTripsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTrips400JSONResponse Error
+
+func (response ListTrips400JSONResponse) VisitListTripsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListVehiclesRequestObject struct {
+}
+
+type ListVehiclesResponseObject interface {
+	VisitListVehiclesResponse(w http.ResponseWriter) error
+}
+
+type ListVehicles200JSONResponse []Vehicle
+
+func (response ListVehicles200JSONResponse) VisitListVehiclesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 
@@ -277,6 +575,15 @@ type StrictServerInterface interface {
 
 	// (GET /health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
+
+	// (GET /routes)
+	ListRoutes(ctx context.Context, request ListRoutesRequestObject) (ListRoutesResponseObject, error)
+
+	// (GET /trips)
+	ListTrips(ctx context.Context, request ListTripsRequestObject) (ListTripsResponseObject, error)
+
+	// (GET /vehicles)
+	ListVehicles(ctx context.Context, request ListVehiclesRequestObject) (ListVehiclesResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -359,6 +666,80 @@ func (sh *strictHandler) GetHealth(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetHealthResponseObject); ok {
 		if err := validResponse.VisitGetHealthResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListRoutes operation middleware
+func (sh *strictHandler) ListRoutes(w http.ResponseWriter, r *http.Request) {
+	var request ListRoutesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListRoutes(ctx, request.(ListRoutesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListRoutes")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListRoutesResponseObject); ok {
+		if err := validResponse.VisitListRoutesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListTrips operation middleware
+func (sh *strictHandler) ListTrips(w http.ResponseWriter, r *http.Request, params ListTripsParams) {
+	var request ListTripsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListTrips(ctx, request.(ListTripsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListTrips")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListTripsResponseObject); ok {
+		if err := validResponse.VisitListTripsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListVehicles operation middleware
+func (sh *strictHandler) ListVehicles(w http.ResponseWriter, r *http.Request) {
+	var request ListVehiclesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListVehicles(ctx, request.(ListVehiclesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListVehicles")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListVehiclesResponseObject); ok {
+		if err := validResponse.VisitListVehiclesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
