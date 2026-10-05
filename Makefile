@@ -55,6 +55,9 @@ lint:
 gen:
 	cd server && go generate ./...
 
+fixtures:
+	cd server && go run ./cmd/routefixtures
+
 
 mgr: db-up
 	$(MIGRATE) -path=/migrations -database "$(DB_URL_INTERNAL)" up

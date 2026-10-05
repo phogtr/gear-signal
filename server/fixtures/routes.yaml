@@ -1,0 +1,64 @@
+# Route intent: start/end depots plus optional via waypoints ([lng, lat]).
+# `make fixtures` snaps these to real streets with OSRM and writes fixtures/routes/<name>.json.
+
+- name: dtla-lax
+  from: DTLA Warehouse
+  to: LAX Cargo
+- name: lax-dtla
+  from: LAX Cargo
+  to: DTLA Warehouse
+
+- name: dtla-port
+  from: DTLA Warehouse
+  to: Port of LA
+- name: port-dtla
+  from: Port of LA
+  to: DTLA Warehouse
+
+- name: dtla-burbank
+  from: DTLA Warehouse
+  to: Burbank Hub
+- name: burbank-dtla
+  from: Burbank Hub
+  to: DTLA Warehouse
+
+- name: lax-port
+  from: LAX Cargo
+  to: Port of LA
+- name: port-lax
+  from: Port of LA
+  to: LAX Cargo
+
+- name: burbank-lax
+  from: Burbank Hub
+  to: LAX Cargo
+- name: lax-burbank
+  from: LAX Cargo
+  to: Burbank Hub
+
+- name: port-burbank
+  from: Port of LA
+  to: Burbank Hub
+- name: burbank-port
+  from: Burbank Hub
+  to: Port of LA
+
+# Surface-street alternative to the freeway: Washington Blvd / La Brea Ave.
+- name: dtla-lax-surface
+  from: DTLA Warehouse
+  to: LAX Cargo
+  via:
+    - [-118.3442, 34.0393]
+    - [-118.3443, 33.9620]
+
+# Loops that start and end at the same depot.
+- name: dtla-hollywood-loop
+  from: DTLA Warehouse
+  to: DTLA Warehouse
+  via:
+    - [-118.3387, 34.1016]
+- name: lax-santa-monica-loop
+  from: LAX Cargo
+  to: LAX Cargo
+  via:
+    - [-118.4912, 34.0195]

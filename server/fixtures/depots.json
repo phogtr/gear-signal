@@ -1,0 +1,22 @@
+[
+  {
+    "name": "DTLA Warehouse",
+    "lat": 34.0407,
+    "lon": -118.2468
+  },
+  {
+    "name": "LAX Cargo",
+    "lat": 33.9416,
+    "lon": -118.4085
+  },
+  {
+    "name": "Port of LA",
+    "lat": 33.7381,
+    "lon": -118.2606
+  },
+  {
+    "name": "Burbank Hub",
+    "lat": 34.1808,
+    "lon": -118.309
+  }
+]
