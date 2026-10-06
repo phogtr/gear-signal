@@ -58,6 +58,9 @@ gen:
 fixtures:
 	cd server && go run ./cmd/routefixtures
 
+seed: db-up
+	cd server && go run ./cmd/seed
+
 
 mgr: db-up
 	$(MIGRATE) -path=/migrations -database "$(DB_URL_INTERNAL)" up
