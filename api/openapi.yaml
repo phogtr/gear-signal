@@ -97,10 +97,12 @@ components:
 
     Route:
       type: object
-      required: [id, name, distanceMeters, durationSeconds, coordinates]
+      required: [id, name, originDepotId, destinationDepotId, distanceMeters, durationSeconds, coordinates]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string, example: dtla-lax }
+        originDepotId: { type: integer, format: int64 }
+        destinationDepotId: { type: integer, format: int64 }
         distanceMeters: { type: number, format: double }
         durationSeconds: { type: integer }
         coordinates:
@@ -130,7 +132,10 @@ components:
         plate: { type: string, example: 8GSV123 }
         type: { $ref: "#/components/schemas/VehicleType" }
         status: { $ref: "#/components/schemas/VehicleStatus" }
-        depotId: { type: integer, format: int64 }
+        depotId:
+          description: Depot where the vehicle is currently parked; changes when a trip completes.
+          type: integer
+          format: int64
 
     TripStatus:
       type: string

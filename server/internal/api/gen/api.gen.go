@@ -106,13 +106,15 @@ type Health struct {
 // Route defines model for Route.
 type Route struct {
 	// Coordinates Street-following polyline as [lng, lat] pairs
-	Coordinates     [][2]float64 `json:"coordinates"`
-	DistanceMeters  float64      `json:"distanceMeters"`
-	DurationSeconds int          `json:"durationSeconds"`
-	Id              int64        `json:"id"`
+	Coordinates        [][2]float64 `json:"coordinates"`
+	DestinationDepotId int64        `json:"destinationDepotId"`
+	DistanceMeters     float64      `json:"distanceMeters"`
+	DurationSeconds    int          `json:"durationSeconds"`
+	Id                 int64        `json:"id"`
 
 	// Name Example: dtla-lax
-	Name string `json:"name"`
+	Name          string `json:"name"`
+	OriginDepotId int64  `json:"originDepotId"`
 }
 
 // Trip defines model for Trip.
@@ -132,6 +134,7 @@ type TripStatus string
 
 // Vehicle defines model for Vehicle.
 type Vehicle struct {
+	// DepotId Depot where the vehicle is currently parked; changes when a trip completes.
 	DepotId int64 `json:"depotId"`
 	Id      int64 `json:"id"`
 
