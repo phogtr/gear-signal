@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"time"
 
@@ -224,16 +223,13 @@ func loadSpecs(path string) ([]routeSpec, error) {
 }
 
 // matches a [lng, lat] pair that MarshalIndent spread over four lines.
-var pairPattern = regexp.MustCompile(`\[\s+(-?[\d.]+),\s+(-?[\d.]+)\s+\]`)
-
-// writes indented JSON with formatting so that git diffs is readable.
+// writes compact JSON; `make fixtures` runs Prettier afterwards for readable diffs.
 func writeJSON(path string, v any) error {
-	data, err := json.MarshalIndent(v, "", "  ")
+	data, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	data = pairPattern.ReplaceAll(data, []byte("[$1, $2]"))
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	return os.WriteFile(path, data, 0o644)
 }
 
 // builds a GeoJSON FeatureCollection of every route and depot.

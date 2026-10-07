@@ -54,12 +54,30 @@ lint:
 
 gen:
 	cd server && go generate ./...
+	cd web && npm run -s gen:api
 
 fixtures:
 	cd server && go run ./cmd/routefixtures
+	web/node_modules/.bin/prettier --write server/fixtures --log-level warn
 
 seed: db-up
 	cd server && go run ./cmd/seed
+
+
+ins:
+	cd web && npm install
+
+dev:
+	cd web && npm run dev
+
+web-build:
+	cd web && npm run build
+
+web-lint:
+	cd web && npm run -s lint && npm run -s format:check
+
+typecheck:
+	cd web && npm run -s typecheck
 
 
 mgr: db-up

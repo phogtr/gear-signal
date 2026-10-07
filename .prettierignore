@@ -1,0 +1,6 @@
+# Generated code: regenerate instead of formatting by hand.
+web/src/lib/api/schema.d.ts
+server/internal/api/gen/
+
+web/dist/
+docs/
