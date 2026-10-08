@@ -1,5 +1,10 @@
 import { NavLink, Outlet } from "react-router";
 
+import { MapPinIcon } from "../icons/MapPinIcon";
+import { WaypointsIcon } from "../icons/WaypointsIcon";
+import { ActivityIcon } from "../icons/ActivityIcon";
+import { AirplayIcon } from "../icons/AirplayIcon";
+
 import {
   CONSOLE_ROUTE,
   MAP_ROUTE,
@@ -8,50 +13,55 @@ import {
 } from "../constants/routes";
 
 const sections = [
-  { to: `/${MAP_ROUTE}`, label: "Map" },
-  { to: `/${SCHEDULE_ROUTE}`, label: "Schedule" },
-  { to: `/${CONSOLE_ROUTE}`, label: "Console" },
-  { to: `/${REPLAY_ROUTE}`, label: "Replay" },
+  { to: `/${MAP_ROUTE}`, label: "Map", icon: <MapPinIcon /> },
+  { to: `/${SCHEDULE_ROUTE}`, label: "Schedule", icon: <WaypointsIcon /> },
+  { to: `/${CONSOLE_ROUTE}`, label: "Console", icon: <ActivityIcon /> },
+  { to: `/${REPLAY_ROUTE}`, label: "Replay", icon: <AirplayIcon /> },
 ];
 
 export const App = () => {
   return (
-    <div className="flex min-h-dvh flex-col">
-      <a
-        href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:rounded focus:bg-amber-400 focus:px-3 focus:py-2 focus:text-zinc-950"
+    <div className="flex h-dvh flex-col-reverse sm:flex-row">
+      <nav
+        aria-label="Primary"
+        className="flex shrink-0 border-t border-border bg-surface sm:w-16 sm:flex-col sm:border-t-0 sm:border-r"
       >
-        Skip to content
-      </a>
+        <div className="hidden h-16 items-center justify-center sm:flex">
+          <span
+            aria-hidden="true"
+            className="font-bold tracking-widest text-xl text-foreground"
+          >
+            GS
+          </span>
+          <span className="sr-only">Gear Signal</span>
+        </div>
 
-      <header className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-zinc-800 px-4 py-3">
-        <span className="text-sm font-semibold tracking-widest text-amber-400 uppercase">
-          Gear Signal
-        </span>
+        <ul className="flex flex-1 sm:flex-none sm:flex-col sm:gap-1 sm:px-2">
+          {sections.map((s) => (
+            <li key={s.to} className="flex-1 sm:flex-none">
+              <NavLink
+                to={s.to}
+                className={({ isActive }) =>
+                  `flex flex-col items-center gap-1 rounded py-2 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-primary ${
+                    isActive
+                      ? "text-foreground"
+                      : "text-muted hover:text-foreground"
+                  }`
+                }
+              >
+                {s.icon}
 
-        <nav aria-label="Primary" className="-mx-1 overflow-x-auto">
-          <ul className="flex gap-1">
-            {sections.map((s) => (
-              <li key={s.to}>
-                <NavLink
-                  to={s.to}
-                  className={({ isActive }) =>
-                    `block rounded px-3 py-1.5 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-amber-400 ${
-                      isActive
-                        ? "bg-zinc-800 text-zinc-50"
-                        : "text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
-                    }`
-                  }
-                >
-                  {s.label}
-                </NavLink>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      </header>
+                {s.label}
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+      </nav>
 
-      <main id="main" className="flex min-h-0 flex-1 flex-col">
+      <main
+        id="main"
+        className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto"
+      >
         <Outlet />
       </main>
     </div>

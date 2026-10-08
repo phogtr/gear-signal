@@ -25,7 +25,7 @@
   /* derived: muted is foreground 60% over background; surface and border are primary-tinted */
   --color-muted: #8d8d93; /* 60%: secondary text (6.2:1 on background) */
   --color-surface: #07161e; /* primary 10% over background: panels and cards (opaque) */
-  --color-border: #092d3c; /* primary 24% over background: dividers and outlines */
+  --color-border: #e7e7f033; /* from foreground, dividers and outlines */
 }
 
 @layer base {
