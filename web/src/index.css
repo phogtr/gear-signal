@@ -1,11 +1,39 @@
 @import "tailwindcss";
 
+/*
+ * design tokens
+ */
+@theme {
+  /* drop Tailwind's built-in palette so only these tokens exist. */
+  --color-*: initial;
+
+  /* palette */
+  --color-foreground: #e7e7f0; /* body text */
+  --color-background: #050508; /* page background */
+  --color-primary: #15aae0; /* interactive: links, active states, focus, selection */
+  --color-secondary: #373271; /* fills only (selected/active backgrounds); too dark for text */
+  --color-accent: #ec9e32; /* highlights that need attention: depots, warnings */
+
+  /* status */
+  --color-success: #15e0b1; /* ok / charging */
+  /*
+   * danger: 4.6:1 on background (fine for any text) but only 4.2:1 on surface.
+   * on panels, danger text must be large or bold, or paired with an icon.
+   */
+  --color-danger: #e03064; /* errors and critical alerts */
+
+  /* derived: muted is foreground 60% over background; surface and border are primary-tinted */
+  --color-muted: #8d8d93; /* 60%: secondary text (6.2:1 on background) */
+  --color-surface: #07161e; /* primary 10% over background: panels and cards (opaque) */
+  --color-border: #092d3c; /* primary 24% over background: dividers and outlines */
+}
+
 @layer base {
   :root {
     color-scheme: dark;
   }
 
   body {
-    @apply bg-zinc-950 text-zinc-100 antialiased;
+    @apply bg-background text-foreground antialiased;
   }
 }

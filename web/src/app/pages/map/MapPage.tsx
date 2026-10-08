@@ -34,10 +34,10 @@ const Stat = ({
   else value = String(query.data.length);
 
   return (
-    <div className="rounded border border-zinc-800 bg-zinc-900 p-3">
-      <dt className="text-xs text-zinc-400 uppercase">{label}</dt>
+    <div className="rounded bg-surface p-3">
+      <dt className="text-xs text-muted uppercase">{label}</dt>
       <dd
-        className={`mt-1 text-2xl font-semibold tabular-nums ${query.isError ? "text-red-400" : ""}`}
+        className={`mt-1 text-2xl font-semibold tabular-nums ${query.isError ? "text-danger" : ""}`}
         title={query.isError ? query.error.message : undefined}
       >
         {value}
