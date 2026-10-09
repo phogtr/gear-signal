@@ -3,7 +3,7 @@
 /*
  * design tokens
  */
-@theme {
+@theme static {
   /* drop Tailwind's built-in palette so only these tokens exist. */
   --color-*: initial;
 

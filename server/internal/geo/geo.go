@@ -116,7 +116,8 @@ func distanceToSegment(p, a, b Point) float64 {
 }
 
 // converts q to x,y meters relative to origin (equirectangular projection).
-// Result is the east/west distance in meters
+// Result is the east/north distance in meters
+// p as origin, q convert to 2d x,y distance
 // https://en.wikipedia.org/wiki/Equirectangular_projection#Forward
 func toLocal(origin, q Point) (float64, float64) {
 	x := rad(q.Lng()-origin.Lng()) * math.Cos(rad(origin.Lat())) * earthRadius

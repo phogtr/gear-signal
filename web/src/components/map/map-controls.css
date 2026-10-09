@@ -1,0 +1,44 @@
+/*
+ * dark theme for MapLibre's built-in controls
+ * prefixed with .maplibregl-map to override
+ */
+.maplibregl-map .maplibregl-ctrl-group {
+  background: var(--color-surface);
+}
+
+.maplibregl-map .maplibregl-ctrl-group:not(:empty) {
+  box-shadow: 0 0 0 1px var(--color-border);
+}
+
+.maplibregl-map .maplibregl-ctrl-group button + button {
+  border-top-color: var(--color-border);
+}
+
+/* icons are dark SVGs; invert them to read on a dark surface */
+.maplibregl-map .maplibregl-ctrl button .maplibregl-ctrl-icon,
+.maplibregl-map .maplibregl-ctrl-attrib-button {
+  filter: invert(0.9);
+}
+
+.maplibregl-map .maplibregl-ctrl button:not(:disabled):hover {
+  background-color: var(--color-secondary);
+}
+
+.maplibregl-map .maplibregl-ctrl-group button:focus:focus-visible,
+.maplibregl-map .maplibregl-ctrl-attrib-button:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-primary);
+}
+
+.maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib,
+.maplibregl-map .maplibregl-ctrl-attrib.maplibregl-compact {
+  background-color: var(--color-surface);
+  color: var(--color-muted);
+}
+
+.maplibregl-map .maplibregl-ctrl-attrib a {
+  color: var(--color-muted);
+}
+
+.maplibregl-map .maplibregl-ctrl-attrib a:hover {
+  color: var(--color-foreground);
+}

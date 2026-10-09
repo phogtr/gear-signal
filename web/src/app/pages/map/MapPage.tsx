@@ -1,47 +1,41 @@
-import type { UseQueryResult } from "@tanstack/react-query";
+import { CoreMap } from "../../../components/map/CoreMap";
+import { MapLegend } from "../../../components/map/MapLegend";
 
 import { useDepots, useRoutes, useVehicles } from "../../../lib/api/queries";
 
-// Temporary: proves the data layer end to end
 export const MapPage = () => {
   const depots = useDepots();
   const routes = useRoutes();
   const vehicles = useVehicles();
 
-  return (
-    <section className="p-6">
-      <h1 className="text-lg font-semibold">Data</h1>
+  const error = depots.error ?? routes.error ?? vehicles.error;
 
-      <dl className="mt-4 grid max-w-md grid-cols-3 gap-3">
-        <Stat label="Depots" query={depots} />
-        <Stat label="Routes" query={routes} />
-        <Stat label="Vehicles" query={vehicles} />
-      </dl>
+  return (
+    <section className="relative flex-1">
+      <h1 className="sr-only">Core map</h1>
+
+      <CoreMap
+        depots={depots.data ?? []}
+        routes={routes.data ?? []}
+        vehicles={vehicles.data ?? []}
+      />
+
+      <div className="pointer-events-none absolute top-3 left-3 flex flex-col gap-2 sm:top-auto sm:bottom-8">
+        {error && (
+          <p
+            role="alert"
+            className="pointer-events-auto rounded border border-border bg-surface px-3 py-2 text-sm font-semibold text-danger"
+          >
+            Could not load data: {error.message}
+          </p>
+        )}
+
+        {vehicles.data && (
+          <div className="pointer-events-auto">
+            <MapLegend vehicles={vehicles.data} />
+          </div>
+        )}
+      </div>
     </section>
-  );
-};
-
-const Stat = ({
-  label,
-  query,
-}: {
-  label: string;
-  query: UseQueryResult<unknown[]>;
-}) => {
-  let value: string;
-  if (query.isPending) value = "…";
-  else if (query.isError) value = "error";
-  else value = String(query.data.length);
-
-  return (
-    <div className="rounded bg-surface p-3">
-      <dt className="text-xs text-muted uppercase">{label}</dt>
-      <dd
-        className={`mt-1 text-2xl font-semibold tabular-nums ${query.isError ? "text-danger" : ""}`}
-        title={query.isError ? query.error.message : undefined}
-      >
-        {value}
-      </dd>
-    </div>
   );
 };

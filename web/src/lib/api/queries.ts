@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { api } from "./client";
+import { api, type Route } from "./client";
 
 // Depots and routes only change when the database is re-seeded, so they never go stale.
 export const useDepots = () => {
@@ -19,7 +19,9 @@ export const useRoutes = () => {
     queryKey: ["routes"],
     queryFn: async () => {
       const { data, response } = await api.GET("/routes");
-      return isOk(data, response, "GET /routes");
+      // openapi-fetch's response helper widens [lng, lat] tuples to number[];
+      // the schema type is the accurate one, so restore it.
+      return isOk(data as Route[] | undefined, response, "GET /routes");
     },
     staleTime: Infinity,
   });
