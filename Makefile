@@ -76,6 +76,9 @@ web-build:
 web-lint:
 	cd web && npm run -s lint && npm run -s format:check
 
+web-test:
+	cd web && npm run -s test
+
 typecheck:
 	cd web && npm run -s typecheck
 
