@@ -3,7 +3,7 @@
  * prefixed with .maplibregl-map to override
  */
 .maplibregl-map .maplibregl-ctrl-group {
-  background: var(--color-surface);
+  background: var(--color-card);
 }
 
 .maplibregl-map .maplibregl-ctrl-group:not(:empty) {
@@ -21,7 +21,7 @@
 }
 
 .maplibregl-map .maplibregl-ctrl button:not(:disabled):hover {
-  background-color: var(--color-secondary);
+  background-color: var(--color-accent);
 }
 
 .maplibregl-map .maplibregl-ctrl-group button:focus:focus-visible,
@@ -31,12 +31,12 @@
 
 .maplibregl-map .maplibregl-ctrl.maplibregl-ctrl-attrib,
 .maplibregl-map .maplibregl-ctrl-attrib.maplibregl-compact {
-  background-color: var(--color-surface);
-  color: var(--color-muted);
+  background-color: var(--color-card);
+  color: var(--color-muted-foreground);
 }
 
 .maplibregl-map .maplibregl-ctrl-attrib a {
-  color: var(--color-muted);
+  color: var(--color-muted-foreground);
 }
 
 .maplibregl-map .maplibregl-ctrl-attrib a:hover {

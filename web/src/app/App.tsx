@@ -24,17 +24,19 @@ export const App = () => {
     <div className="flex h-dvh flex-col-reverse sm:flex-row">
       <nav
         aria-label="Primary"
-        className="flex shrink-0 border-t border-border bg-surface sm:w-16 sm:flex-col sm:border-t-0 sm:border-r"
+        className="flex shrink-0 border-t border-sidebar-border bg-sidebar sm:w-18 sm:flex-col sm:border-t-0 sm:border-r"
       >
-        <div className="hidden h-16 items-center justify-center sm:flex">
+        <div className="hidden h-14 items-center justify-center sm:flex">
           <span
             aria-hidden="true"
-            className="font-bold tracking-widest text-xl text-foreground"
+            className="font-bold tracking-widest text-xl text-sidebar-foreground"
           >
             GS
           </span>
           <span className="sr-only">Gear Signal</span>
         </div>
+
+        <span className="sm:mx-2 sm:mb-2 sm:border-t sm:border-sidebar-border" />
 
         <ul className="flex flex-1 sm:flex-none sm:flex-col sm:gap-1 sm:px-2">
           {sections.map((s) => (
@@ -42,10 +44,10 @@ export const App = () => {
               <NavLink
                 to={s.to}
                 className={({ isActive }) =>
-                  `flex flex-col items-center gap-1 rounded py-2 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-primary ${
+                  `flex flex-col items-center gap-1 py-2 text-xs transition-colors focus-visible:outline-2 focus-visible:outline-primary sm:rounded ${
                     isActive
-                      ? "text-foreground"
-                      : "text-muted hover:text-foreground"
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "text-muted-foreground hover:text-sidebar-foreground"
                   }`
                 }
               >

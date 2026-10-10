@@ -24,7 +24,7 @@ export const MapPage = () => {
         {error && (
           <p
             role="alert"
-            className="pointer-events-auto rounded border border-border bg-surface px-3 py-2 text-sm font-semibold text-danger"
+            className="pointer-events-auto rounded border border-border bg-card px-3 py-2 text-sm font-semibold text-danger"
           >
             Could not load data: {error.message}
           </p>

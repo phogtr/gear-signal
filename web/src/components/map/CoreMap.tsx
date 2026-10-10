@@ -129,7 +129,7 @@ const applyTheme = (map: MapLibreMap) => {
     );
   }
   if (map.getLayer("water")) {
-    map.setPaintProperty("water", "fill-color", themeColor("surface"));
+    map.setPaintProperty("water", "fill-color", themeColor("muted"));
   }
 };
 
@@ -150,7 +150,7 @@ const addCoreLayers = (map: MapLibreMap) => {
     layout: { "line-join": "round", "line-cap": "round" },
     paint: {
       "line-color": themeColor("primary"),
-      "line-opacity": 0.45,
+      "line-opacity": 0.3,
       "line-width": ["interpolate", ["linear"], ["zoom"], 9, 1.5, 14, 4],
     },
   });
@@ -163,7 +163,7 @@ const addCoreLayers = (map: MapLibreMap) => {
     paint: {
       "circle-radius": 7,
       "circle-color": themeColor("background"),
-      "circle-stroke-color": themeColor("accent"),
+      "circle-stroke-color": themeColor("warning"),
       "circle-stroke-width": 2.5,
     },
   });
@@ -182,9 +182,10 @@ const addCoreLayers = (map: MapLibreMap) => {
         "charging",
         themeColor("success"),
         "maintenance",
-        themeColor("accent"),
-        themeColor("muted"), // idle
+        themeColor("warning"),
+        themeColor("muted-foreground"), // idle
       ],
+      "circle-opacity": ["match", ["get", "status"], "idle", 0.6, 1],
       "circle-stroke-color": themeColor("background"),
       "circle-stroke-width": 1,
     },
@@ -202,7 +203,7 @@ const addCoreLayers = (map: MapLibreMap) => {
         "\n",
         {},
         ["concat", ["to-string", ["get", "vehicleCount"]], " vehicles"],
-        { "font-scale": 0.85, "text-color": themeColor("muted") },
+        { "font-scale": 0.85, "text-color": themeColor("muted-foreground") },
       ],
       "text-font": ["Noto Sans Regular"],
       "text-size": 12,

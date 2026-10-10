@@ -4,16 +4,16 @@ type Status = Vehicle["status"];
 
 const items: { status: Status; label: string; dot: string }[] = [
   { status: "en_route", label: "En route", dot: "bg-primary" },
-  { status: "idle", label: "Idle", dot: "bg-muted" },
+  { status: "idle", label: "Idle", dot: "bg-muted-foreground/60" },
   { status: "charging", label: "Charging", dot: "bg-success" },
-  { status: "maintenance", label: "Maintenance", dot: "bg-accent" },
+  { status: "maintenance", label: "Maintenance", dot: "bg-warning" },
 ];
 
 export const MapLegend = ({ vehicles }: { vehicles: Vehicle[] }) => {
   return (
     <section
       aria-label="Map legend"
-      className="px-3 py-2 text-xs rounded-sm border border-border bg-surface"
+      className="px-3 py-2 text-xs rounded-sm border border-border bg-card"
     >
       <ul className="space-y-1">
         {items.map((item) => (
@@ -23,7 +23,7 @@ export const MapLegend = ({ vehicles }: { vehicles: Vehicle[] }) => {
               className={`size-2.5 rounded-full ${item.dot}`}
             />
             <span className="flex-1">{item.label}</span>
-            <span className="text-muted tabular-nums">
+            <span className="text-muted-foreground tabular-nums">
               {vehicles.filter((v) => v.status === item.status).length}
             </span>
           </li>
@@ -32,7 +32,7 @@ export const MapLegend = ({ vehicles }: { vehicles: Vehicle[] }) => {
         <li className="pt-1 flex items-center gap-2 border-t border-border">
           <span
             aria-hidden="true"
-            className="size-2.5 rounded-full border-2 border-accent"
+            className="size-2.5 rounded-full border-2 border-warning"
           />
           <span className="flex-1">Depot</span>
         </li>

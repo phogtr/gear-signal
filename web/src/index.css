@@ -2,30 +2,69 @@
 
 /*
  * design tokens
+ * https://tweakcn.com/themes/cmryyy6c2000004jqepxn4irx
  */
 @theme static {
   /* drop Tailwind's built-in palette so only these tokens exist. */
   --color-*: initial;
 
-  /* palette */
-  --color-foreground: #e7e7f0; /* body text */
-  --color-background: #050508; /* page background */
-  --color-primary: #15aae0; /* interactive: links, active states, focus, selection */
-  --color-secondary: #373271; /* fills only (selected/active backgrounds); too dark for text */
-  --color-accent: #ec9e32; /* highlights that need attention: depots, warnings */
+  --color-background: oklch(0.145 0 0);
+  --color-foreground: oklch(0.9851 0 0);
+  --color-primary: oklch(0.609 0.126 221.723);
+  --color-primary-foreground: oklch(0 0 0);
+  --color-secondary: oklch(0.809 0.105 251.813);
+  --color-secondary-foreground: oklch(0 0 0);
+  --color-accent: oklch(0.4959 0.0612 67.2);
+  --color-accent-foreground: oklch(1 0 0);
+  --color-muted: oklch(0.2686 0 0);
+  --color-muted-foreground: oklch(0.709 0 0);
 
-  /* status */
-  --color-success: #15e0b1; /* ok / charging */
-  /*
-   * danger: 4.6:1 on background (fine for any text) but only 4.2:1 on surface.
-   * on panels, danger text must be large or bold, or paired with an icon.
-   */
-  --color-danger: #e03064; /* errors and critical alerts */
+  --color-border: oklch(0.2768 0 0);
+  --color-input: oklch(0.325 0 0);
+  --color-ring: oklch(0.5555 0 0);
 
-  /* derived: muted is foreground 60% over background; surface and border are primary-tinted */
-  --color-muted: #8d8d93; /* 60%: secondary text (6.2:1 on background) */
-  --color-surface: #07161e; /* primary 10% over background: panels and cards (opaque) */
-  --color-border: #e7e7f033; /* from foreground, dividers and outlines */
+  --color-card: oklch(0.145 0 0);
+  --color-card-foreground: oklch(0.9851 0 0);
+
+  --color-success: oklch(0.6 0.118 184.704); /* ok / charging */
+  --color-warning: oklch(0.6828 0.0783 67.2);
+  --color-info: oklch(0.707 0.165 254.624);
+  --color-misc: oklch(0.302 0.056 229.695);
+  --color-danger: oklch(0.704 0.191 22.216);
+  --color-danger-foreground: oklch(0.21 0.006 285.885);
+
+  --color-sidebar: oklch(0.2167 0.0015 197.0424);
+  --color-sidebar-foreground: oklch(0.9851 0 0);
+  --color-sidebar-primary: oklch(0.609 0.126 221.723);
+  --color-sidebar-accent: oklch(0.2686 0 0);
+  --color-sidebar-accent-foreground: oklch(0.9851 0 0);
+  --color-sidebar-border: oklch(0.2768 0 0);
+  --color-sidebar-ring: oklch(0.4386 0 0);
+
+  --radius: 0.4rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --shadow-2xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
+  --shadow-xs: 0 1px 3px 0px hsl(0 0% 0% / 0.05);
+  --shadow-sm:
+    0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
+  --shadow: 0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
+  --shadow-md:
+    0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 2px 4px -1px hsl(0 0% 0% / 0.1);
+  --shadow-lg:
+    0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 4px 6px -1px hsl(0 0% 0% / 0.1);
+  --shadow-xl:
+    0 1px 3px 0px hsl(0 0% 0% / 0.1), 0 8px 10px -1px hsl(0 0% 0% / 0.1);
+  --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
+
+  --font-sans: Vazirmatn, ui-sans-serif, sans-serif, system-ui;
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
 }
 
 @layer base {
@@ -33,6 +72,9 @@
     color-scheme: dark;
   }
 
+  * {
+    @apply border-border outline-ring/85;
+  }
   body {
     @apply bg-background text-foreground antialiased;
   }
