@@ -63,6 +63,9 @@ fixtures:
 seed: db-up
 	cd server && go run ./cmd/seed
 
+test:
+	cd server && go test ./...
+
 
 ins:
 	cd web && npm install
@@ -70,13 +73,13 @@ ins:
 dev:
 	cd web && npm run dev
 
-web-build:
+w-build:
 	cd web && npm run build
 
-web-lint:
+w-lint:
 	cd web && npm run -s lint && npm run -s format:check
 
-web-test:
+w-test:
 	cd web && npm run -s test
 
 typecheck:

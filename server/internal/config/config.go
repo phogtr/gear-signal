@@ -2,7 +2,9 @@ package config
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -10,6 +12,7 @@ type Config struct {
 	Addr            string
 	DatabaseURL     string
 	ShutdownTimeout time.Duration
+	SimSpeed        float64
 }
 
 func Load() (Config, error) {
@@ -18,6 +21,12 @@ func Load() (Config, error) {
 		DatabaseURL:     os.Getenv("DATABASE_URL"),
 		ShutdownTimeout: 10 * time.Second,
 	}
+
+	speed, err := strconv.ParseFloat(getenv("SIM_SPEED", "1"), 64)
+	if err != nil || speed <= 0 {
+		return Config{}, fmt.Errorf("SIM_SPEED must be a number > 0, got %q", os.Getenv("SIM_SPEED"))
+	}
+	cfg.SimSpeed = speed
 
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required")

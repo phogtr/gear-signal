@@ -3,6 +3,7 @@ package geo
 import (
 	"errors"
 	"math"
+	"sort"
 )
 
 const earthRadius = 6371000.0
@@ -60,6 +61,36 @@ func NewPolyline(points []Point) (*Polyline, error) {
 
 func (pl *Polyline) Length() float64 { return pl.cum[len(pl.cum)-1] }
 
+// returns the position and heading after traveling d meters along the line.
+// e.g: cum = [0, 400, 1000, 1500], d = 700.
+// SearchFloat64s return i = 2.
+// seg = cum[2] - cum[1] = 1000 - 400 = 600.
+// d - cum[i-1] = 700 - 400 = 300.
+// t = 300 / 600 = 0.5
+func (pl *Polyline) PointAt(d float64) (Point, float64) {
+	d = math.Max(0, math.Min(d, pl.Length()))
+
+	// i is the end of the segment containing d: cum[i-1] <= d <= cum[i].
+	i := sort.SearchFloat64s(pl.cum, d)
+	if i == 0 {
+		i = 1
+	}
+	a, b := pl.points[i-1], pl.points[i]
+	seg := pl.cum[i] - pl.cum[i-1]
+
+	// fraction from 0 to 1. 0 means "at a", 1 means "at b",
+	t := 0.0
+	if seg > 0 {
+		// d - [i-1] is is how far into this segment, measured from its start
+		t = (d - pl.cum[i-1]) / seg
+	}
+	// p is linear interpolation (lerp function)
+	// p = a * (1-t) + b*t -> a - a*t + b*t -> a + b*t - a*t
+	// p = a + (b − a) * t
+	p := Point{a.Lng() + (b.Lng()-a.Lng())*t, a.Lat() + (b.Lat()-a.Lat())*t}
+	return p, Bearing(a, b)
+}
+
 // removes points that deviate less than tolerance meters from the
 // overall shape (Douglas–Peucker). First and last points are always kept.
 func ApplyDouglasPeucker(points []Point, tolerance float64) []Point {
@@ -99,10 +130,11 @@ func douglasPeucker(points []Point, first, last int, tol float64, keep []bool) {
 func distanceToSegment(p, a, b Point) float64 {
 	ax, ay := toLocal(p, a)
 	bx, by := toLocal(p, b)
-	dx, dy := bx-ax, by-ay // vector from a to b
+	dx, dy := bx-ax, by-ay // d = vector from a to b
 
 	// any point on the line = a + t*d (parametric equation of a line).
-	// Drops a perpendicular from p onto the infinite line through a & b, and t says where it lands
+	// Drops a perpendicular from p onto the infinite line through a & b, and t says where it lands.
+	// t = 0 → A, t = 1 → B, t = 0.5 → midpoint
 	t := 0.0
 	if lenSq := dx*dx + dy*dy; lenSq > 0 {
 		// dot product: (a + t*d) · d = 0 (perpendicular)
@@ -116,7 +148,7 @@ func distanceToSegment(p, a, b Point) float64 {
 }
 
 // converts q to x,y meters relative to origin (equirectangular projection).
-// Result is the east/north distance in meters
+// Result is the east/north distance in meters.
 // p as origin, q convert to 2d x,y distance
 // https://en.wikipedia.org/wiki/Equirectangular_projection#Forward
 func toLocal(origin, q Point) (float64, float64) {

@@ -7,11 +7,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/phogtr/gear-signal/internal/api"
 	"github.com/phogtr/gear-signal/internal/config"
+	"github.com/phogtr/gear-signal/internal/engine"
 	"github.com/phogtr/gear-signal/internal/store"
 )
 
@@ -43,10 +45,25 @@ func run() error {
 		return err
 	}
 	defer pool.Close()
+	st := store.New(pool)
+
+	eng, err := engine.New(ctx, st, cfg.SimSpeed)
+	if err != nil {
+		return err
+	}
+
+	var wg sync.WaitGroup
+	wg.Go(func() { eng.Run(ctx) })
+	// runs before pool.Close, so engine never writes to a closed pool
+	defer func() {
+		stop()
+		wg.Wait()
+	}()
+	slog.Info("simulator running", "speed", cfg.SimSpeed)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           api.NewRouter(store.New(pool)),
+		Handler:           api.NewRouter(st),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
