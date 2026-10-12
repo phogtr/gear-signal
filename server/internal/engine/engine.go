@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"time"
 
 	"github.com/phogtr/gear-signal/internal/geo"
@@ -14,25 +15,38 @@ import (
 type Store interface {
 	ListRoutes(ctx context.Context) ([]store.Route, error)
 	ListTrips(ctx context.Context, status *string) ([]store.Trip, error)
+	ListVehicles(ctx context.Context) ([]store.Vehicle, error)
+	StartTrip(ctx context.Context, vehicleID, routeID int64, startedAt time.Time) (int64, error)
+	SetTripETA(ctx context.Context, tripID int64, eta time.Time) error
 	CompleteTrip(ctx context.Context, tripID int64, completedAt time.Time) error
 }
+
+const directorInterval = 5 * time.Second
 
 // Engine owns the simulator: ticks once a second, writes finished trips
 // back to database. Only Run's goroutine touches the sim
 type Engine struct {
-	store Store
-	sim   *sim.Sim
+	store          Store
+	sim            *sim.Sim
+	demoTrips      int
+	routesByOrigin map[int64][]int64
+	rng            *rand.Rand
 }
 
-// loads the routes and resumes every active trip from its started_at
-func New(ctx context.Context, st Store, multiplier float64) (*Engine, error) {
+// loads the routes and resumes every active trip from its started_at.
+// demoTrips is how many vehicles the director keeps driving; 0 turns it off.
+func New(ctx context.Context, st Store, multiplier float64, demoTrips int) (*Engine, error) {
 	routes, err := st.ListRoutes(ctx)
 	if err != nil {
 		return nil, err
 	}
+
 	simRoutes := make([]sim.Route, len(routes))
+	routesByOrigin := map[int64][]int64{}
 	for i, r := range routes {
+		routesByOrigin[r.OriginDepotID] = append(routesByOrigin[r.OriginDepotID], r.ID)
 		points := make([]geo.Point, len(r.Coordinates))
+
 		for j, c := range r.Coordinates {
 			// coordinates is [][2]float64, points is []geo.Point
 			points[j] = geo.Point(c)
@@ -61,18 +75,29 @@ func New(ctx context.Context, st Store, multiplier float64) (*Engine, error) {
 		slog.Info("resumed trip", "trip", t.ID, "vehicle", t.VehicleID, "eta", eta.Format(time.TimeOnly))
 	}
 
-	return &Engine{store: st, sim: s}, nil
+	return &Engine{
+		store:          st,
+		sim:            s,
+		demoTrips:      demoTrips,
+		routesByOrigin: routesByOrigin,
+		rng:            rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0)),
+	}, nil
 }
 
 func (e *Engine) Run(ctx context.Context) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
+	director := time.NewTicker(directorInterval)
+	defer director.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case now := <-ticker.C:
 			e.step(ctx, now)
+		case now := <-director.C:
+			e.direct(ctx, now)
 		}
 	}
 }
@@ -92,4 +117,38 @@ func (e *Engine) step(ctx context.Context, now time.Time) []sim.State {
 		slog.Info("completed trip", "trip", st.TripID, "vehicle", st.VehicleID)
 	}
 	return states
+}
+
+func (e *Engine) direct(ctx context.Context, now time.Time) {
+	if e.demoTrips == 0 {
+		return
+	}
+	vehicles, err := e.store.ListVehicles(ctx)
+	if err != nil {
+		slog.Error("director: list vehicles", "err", err)
+		return
+	}
+	vehicleID, routeID, ok := pickTrip(e.rng, vehicles, e.routesByOrigin, e.demoTrips)
+	if !ok {
+		return
+	}
+
+	// Postgres keeps microseconds; truncate keeps Go and DB identical for resumes
+	startedAt := now.Truncate(time.Microsecond)
+	tripID, err := e.store.StartTrip(ctx, vehicleID, routeID, startedAt)
+	if err != nil {
+		slog.Error("director", "err", err)
+		return
+	}
+
+	eta, err := e.sim.Start(sim.Trip{ID: tripID, VehicleID: vehicleID, RouteID: routeID, StartedAt: startedAt})
+	if err != nil {
+		// active in DB but not simulated; next boot resumes it
+		slog.Error("director: simulate trip", "trip", tripID, "err", err)
+		return
+	}
+	if err := e.store.SetTripETA(ctx, tripID, eta); err != nil {
+		slog.Error("director", "err", err)
+	}
+	slog.Info("started trip", "trip", tripID, "vehicle", vehicleID, "route", routeID, "eta", eta.Format(time.TimeOnly))
 }

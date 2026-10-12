@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -52,6 +53,38 @@ func (s *Store) CompleteTrip(ctx context.Context, tripID int64, completedAt time
 	}
 	if tag.RowsAffected() == 0 {
 		return fmt.Errorf("complete trip %d: not active", tripID)
+	}
+	return nil
+}
+
+// creates an active trip and sets the vehicle en_route, only if the vehicle is
+// idle and parked at the route's origin depot
+func (s *Store) StartTrip(ctx context.Context, vehicleID, routeID int64, startedAt time.Time) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `
+		WITH v AS (
+			UPDATE vehicles v SET status = 'en_route'
+			FROM routes r
+			WHERE v.id = $1 AND v.status = 'idle' AND r.id = $2 AND r.origin_depot_id = v.depot_id
+			RETURNING v.id
+		)
+		INSERT INTO trips (vehicle_id, route_id, scheduled_start, started_at, status)
+		SELECT v.id, $2, $3, $3, 'active' FROM v
+		RETURNING id
+	`, vehicleID, routeID, startedAt).Scan(&id)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("start trip: vehicle %d is not idle at the origin of route %d", vehicleID, routeID)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("start trip: %w", err)
+	}
+	return id, nil
+}
+
+func (s *Store) SetTripETA(ctx context.Context, tripID int64, eta time.Time) error {
+	if _, err := s.pool.Exec(ctx, `UPDATE trips SET eta = $2 WHERE id = $1`, tripID, eta); err != nil {
+		return fmt.Errorf("set eta for trip %d: %w", tripID, err)
 	}
 	return nil
 }

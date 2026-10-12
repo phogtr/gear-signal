@@ -47,7 +47,7 @@ func run() error {
 	defer pool.Close()
 	st := store.New(pool)
 
-	eng, err := engine.New(ctx, st, cfg.SimSpeed)
+	eng, err := engine.New(ctx, st, cfg.SimSpeed, cfg.DemoTrips)
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func run() error {
 		stop()
 		wg.Wait()
 	}()
-	slog.Info("simulator running", "speed", cfg.SimSpeed)
+	slog.Info("simulator running", "speed", cfg.SimSpeed, "demoTrips", cfg.DemoTrips)
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
