@@ -10,12 +10,13 @@ import (
 	"github.com/phogtr/gear-signal/internal/store"
 )
 
-func NewRouter(st *store.Store) http.Handler {
+func NewRouter(st *store.Store, ws http.Handler) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
+	r.Handle("/ws", ws)
 	gen.HandlerFromMux(gen.NewStrictHandler(&Server{store: st}, nil), r)
 	return r
 }

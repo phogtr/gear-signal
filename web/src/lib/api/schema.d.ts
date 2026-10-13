@@ -111,9 +111,13 @@ export interface components {
             originDepotId: number;
             /** Format: int64 */
             destinationDepotId: number;
-            /** Format: double */
-            distanceMeters: number;
-            durationSeconds: number;
+            /**
+             * Format: double
+             * @description Meters along the stored polyline
+             */
+            distance: number;
+            /** @description Seconds at free-flow speed (OSRM) */
+            duration: number;
             /** @description Street-following polyline as [lng, lat] pairs */
             coordinates: [
                 number,

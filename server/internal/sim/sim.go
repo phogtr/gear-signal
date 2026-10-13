@@ -25,15 +25,15 @@ type Trip struct {
 }
 
 type State struct {
-	VehicleID      int64
-	TripID         int64
-	RouteID        int64
-	DistanceMeters float64
-	Lng, Lat       float64
-	Heading        float64 // degrees, 0 = north
-	SpeedMps       float64
-	Progress       float64 // 0..1
-	Done           bool
+	VehicleID int64
+	TripID    int64
+	RouteID   int64
+	Distance  float64 // meters along the route
+	Speed     float64 // meters per second
+	Lat, Lng  float64
+	Degree    float64 // 0 = north
+	Progress  float64 // 0..1
+	Done      bool
 }
 
 type route struct {
@@ -100,21 +100,21 @@ func (s *Sim) Tick(now time.Time) []State {
 		elapsed := now.Sub(a.StartedAt).Seconds() * s.multiplier
 		d := min(max(elapsed*a.speed, 0), length)
 
-		p, heading := a.route.line.PointAt(d)
+		p, degree := a.route.line.PointAt(d)
 		st := State{
-			VehicleID:      a.VehicleID,
-			TripID:         a.ID,
-			RouteID:        a.RouteID,
-			DistanceMeters: d,
-			Lng:            p.Lng(),
-			Lat:            p.Lat(),
-			Heading:        heading,
-			SpeedMps:       a.speed,
-			Progress:       d / length,
-			Done:           d >= length,
+			VehicleID: a.VehicleID,
+			TripID:    a.ID,
+			RouteID:   a.RouteID,
+			Distance:  d,
+			Speed:     a.speed,
+			Lat:       p.Lat(),
+			Lng:       p.Lng(),
+			Degree:    degree,
+			Progress:  d / length,
+			Done:      d >= length,
 		}
 		if st.Done {
-			st.SpeedMps = 0
+			st.Speed = 0
 			delete(s.trips, id)
 		}
 		states = append(states, st)

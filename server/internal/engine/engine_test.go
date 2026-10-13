@@ -73,7 +73,7 @@ func TestNewResumesOnlyActiveTrips(t *testing.T) {
 	scheduled := store.Trip{ID: 2, VehicleID: 8, RouteID: 1, Status: "scheduled", ScheduledStart: t0}
 	fs := &fakeStore{routes: []store.Route{route}, trips: []store.Trip{activeTrip(1, 7, t0), scheduled}}
 
-	e, err := New(context.Background(), fs, 1, 0)
+	e, err := New(context.Background(), fs, nil, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,14 +81,14 @@ func TestNewResumesOnlyActiveTrips(t *testing.T) {
 	if len(states) != 1 || states[0].TripID != 1 {
 		t.Fatalf("want only trip 1 moving, got %+v", states)
 	}
-	if states[0].DistanceMeters <= 0 {
+	if states[0].Distance <= 0 {
 		t.Errorf("resumed trip did not move: %+v", states[0])
 	}
 }
 
 func TestStepCompletesFinishedTrips(t *testing.T) {
 	fs := &fakeStore{routes: []store.Route{route}, trips: []store.Trip{activeTrip(1, 7, t0)}}
-	e, err := New(context.Background(), fs, 1, 0)
+	e, err := New(context.Background(), fs, nil, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +112,7 @@ func TestStepKeepsGoingWhenCompleteFails(t *testing.T) {
 		trips:    []store.Trip{activeTrip(1, 7, t0), activeTrip(2, 8, t0)},
 		failNext: true,
 	}
-	e, err := New(context.Background(), fs, 1, 0)
+	e, err := New(context.Background(), fs, nil, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestStepKeepsGoingWhenCompleteFails(t *testing.T) {
 func TestNewRejectsActiveTripWithoutStartedAt(t *testing.T) {
 	broken := store.Trip{ID: 1, VehicleID: 7, RouteID: 1, Status: "active"}
 	fs := &fakeStore{routes: []store.Route{route}, trips: []store.Trip{broken}}
-	if _, err := New(context.Background(), fs, 1, 0); err == nil {
+	if _, err := New(context.Background(), fs, nil, 1, 0); err == nil {
 		t.Error("want error")
 	}
 }
@@ -136,7 +136,7 @@ func TestDirectStartsOneTripPerPassUpToTarget(t *testing.T) {
 		{ID: 2, Status: "idle", DepotID: 1},
 		{ID: 3, Status: "idle", DepotID: 1},
 	}}
-	e, err := New(context.Background(), fs, 1, 2)
+	e, err := New(context.Background(), fs, nil, 1, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestDirectStartsOneTripPerPassUpToTarget(t *testing.T) {
 
 func TestDirectOffWhenDemoTripsIsZero(t *testing.T) {
 	fs := &fakeStore{routes: []store.Route{route}, vehicles: []store.Vehicle{{ID: 1, Status: "idle", DepotID: 1}}}
-	e, err := New(context.Background(), fs, 1, 0)
+	e, err := New(context.Background(), fs, nil, 1, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

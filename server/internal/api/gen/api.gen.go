@@ -108,9 +108,13 @@ type Route struct {
 	// Coordinates Street-following polyline as [lng, lat] pairs
 	Coordinates        [][2]float64 `json:"coordinates"`
 	DestinationDepotId int64        `json:"destinationDepotId"`
-	DistanceMeters     float64      `json:"distanceMeters"`
-	DurationSeconds    int          `json:"durationSeconds"`
-	Id                 int64        `json:"id"`
+
+	// Distance Meters along the stored polyline
+	Distance float64 `json:"distance"`
+
+	// Duration Seconds at free-flow speed (OSRM)
+	Duration int   `json:"duration"`
+	Id       int64 `json:"id"`
 
 	// Name Example: dtla-lax
 	Name          string `json:"name"`

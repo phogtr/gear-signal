@@ -19,8 +19,8 @@ func (s *Server) ListRoutes(ctx context.Context, _ gen.ListRoutesRequestObject) 
 			Name:               r.Name,
 			OriginDepotId:      r.OriginDepotID,
 			DestinationDepotId: r.DestinationDepotID,
-			DistanceMeters:     r.DistanceM,
-			DurationSeconds:    r.DurationS,
+			Distance:           r.DistanceM,
+			Duration:           r.DurationS,
 			Coordinates:        r.Coordinates,
 		}
 	}

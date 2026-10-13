@@ -97,14 +97,29 @@ components:
 
     Route:
       type: object
-      required: [id, name, originDepotId, destinationDepotId, distanceMeters, durationSeconds, coordinates]
+      required:
+        [
+          id,
+          name,
+          originDepotId,
+          destinationDepotId,
+          distance,
+          duration,
+          coordinates,
+        ]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string, example: dtla-lax }
         originDepotId: { type: integer, format: int64 }
         destinationDepotId: { type: integer, format: int64 }
-        distanceMeters: { type: number, format: double }
-        durationSeconds: { type: integer }
+        distance:
+          {
+            type: number,
+            format: double,
+            description: Meters along the stored polyline,
+          }
+        duration:
+          { type: integer, description: Seconds at free-flow speed (OSRM) }
         coordinates:
           description: Street-following polyline as [lng, lat] pairs
           type: array

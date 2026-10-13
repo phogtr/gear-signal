@@ -21,12 +21,17 @@ type Store interface {
 	CompleteTrip(ctx context.Context, tripID int64, completedAt time.Time) error
 }
 
+type Sender interface {
+	Send(now time.Time, states []sim.State)
+}
+
 const directorInterval = 5 * time.Second
 
 // Engine owns the simulator: ticks once a second, writes finished trips
-// back to database. Only Run's goroutine touches the sim
+// to database. Only Run's goroutine touches the sim
 type Engine struct {
 	store          Store
+	writer         Sender
 	sim            *sim.Sim
 	demoTrips      int
 	routesByOrigin map[int64][]int64
@@ -35,7 +40,7 @@ type Engine struct {
 
 // loads the routes and resumes every active trip from its started_at.
 // demoTrips is how many vehicles the director keeps driving; 0 turns it off.
-func New(ctx context.Context, st Store, multiplier float64, demoTrips int) (*Engine, error) {
+func New(ctx context.Context, st Store, writer Sender, multiplier float64, demoTrips int) (*Engine, error) {
 	routes, err := st.ListRoutes(ctx)
 	if err != nil {
 		return nil, err
@@ -77,6 +82,7 @@ func New(ctx context.Context, st Store, multiplier float64, demoTrips int) (*Eng
 
 	return &Engine{
 		store:          st,
+		writer:         writer,
 		sim:            s,
 		demoTrips:      demoTrips,
 		routesByOrigin: routesByOrigin,
@@ -115,6 +121,10 @@ func (e *Engine) step(ctx context.Context, now time.Time) []sim.State {
 			continue
 		}
 		slog.Info("completed trip", "trip", st.TripID, "vehicle", st.VehicleID)
+	}
+
+	if e.writer != nil {
+		e.writer.Send(now, states)
 	}
 	return states
 }

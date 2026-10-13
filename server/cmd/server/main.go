@@ -15,6 +15,7 @@ import (
 	"github.com/phogtr/gear-signal/internal/config"
 	"github.com/phogtr/gear-signal/internal/engine"
 	"github.com/phogtr/gear-signal/internal/store"
+	"github.com/phogtr/gear-signal/internal/ws"
 )
 
 func main() {
@@ -47,7 +48,8 @@ func run() error {
 	defer pool.Close()
 	st := store.New(pool)
 
-	eng, err := engine.New(ctx, st, cfg.SimSpeed, cfg.DemoTrips)
+	hub := ws.NewHub()
+	eng, err := engine.New(ctx, st, hub, cfg.SimSpeed, cfg.DemoTrips)
 	if err != nil {
 		return err
 	}
@@ -63,9 +65,10 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           api.NewRouter(st),
+		Handler:           api.NewRouter(st, hub),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+	srv.RegisterOnShutdown(hub.Close)
 
 	errCh := make(chan error, 1)
 	go func() {
