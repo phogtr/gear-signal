@@ -10,15 +10,19 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { FeatureCollection } from "geojson";
 
-import type { Depot, Route, Vehicle } from "../../lib/api/client";
+import { useSocketStore } from "../../lib/ws/socket";
+
 import {
   boundsOf,
   depotsToGeoJSON,
+  liveVehiclesToGeoJSON,
   metersPerPixel,
   parkedVehiclesToGeoJSON,
   routesToGeoJSON,
 } from "../../lib/map/geojson";
 import { themeColor } from "../../lib/theme";
+
+import type { Depot, Route, Vehicle } from "../../lib/api/client";
 
 import "./map-controls.css";
 
@@ -82,6 +86,24 @@ export const CoreMap = ({ depots, routes, vehicles }: Props) => {
     };
   }, []);
 
+  // subscribe outside React so a tick
+  // updates one map source without re-rendering the page
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+
+    const sync = (vehicles = useSocketStore.getState().vehicles) =>
+      map
+        .getSource<GeoJSONSource>("live")
+        ?.setData(liveVehiclesToGeoJSON(vehicles));
+
+    sync();
+
+    return useSocketStore.subscribe((s, prev) => {
+      if (s.vehicles !== prev.vehicles) sync(s.vehicles);
+    });
+  }, [ready]);
+
   // psh data into the map sources whenever it changes
   useEffect(() => {
     dataRef.current = { depots, vehicles };
@@ -142,6 +164,7 @@ const addCoreLayers = (map: MapLibreMap) => {
   map.addSource("routes", { type: "geojson", data: empty });
   map.addSource("depots", { type: "geojson", data: empty });
   map.addSource("vehicles", { type: "geojson", data: empty });
+  map.addSource("live", { type: "geojson", data: empty });
 
   map.addLayer({
     id: "routes",
@@ -188,6 +211,19 @@ const addCoreLayers = (map: MapLibreMap) => {
       "circle-opacity": ["match", ["get", "status"], "idle", 0.6, 1],
       "circle-stroke-color": themeColor("background"),
       "circle-stroke-width": 1,
+    },
+  });
+
+  // vehicles on a trip
+  map.addLayer({
+    id: "live",
+    type: "circle",
+    source: "live",
+    paint: {
+      "circle-radius": 4.5,
+      "circle-color": themeColor("primary"),
+      "circle-stroke-color": themeColor("background"),
+      "circle-stroke-width": 1.5,
     },
   });
 

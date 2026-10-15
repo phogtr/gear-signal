@@ -6,6 +6,7 @@ import type {
 } from "geojson";
 
 import type { Depot, Route, Vehicle } from "../api/client";
+import type { VehicleState } from "../ws/types";
 
 type Point = [lng: number, lat: number];
 
@@ -41,7 +42,10 @@ export const depotsToGeoJSON = (
     id: d.id,
     properties: {
       name: d.name,
-      vehicleCount: vehicles.filter((v) => v.depotId === d.id).length,
+      // depotId of an en route vehicle is where it left from, not where it is
+      vehicleCount: vehicles.filter(
+        (v) => v.depotId === d.id && v.status !== "en_route",
+      ).length,
     },
     geometry: { type: "Point", coordinates: [d.lon, d.lat] },
   })),
@@ -57,6 +61,8 @@ export const parkedVehiclesToGeoJSON = (
   const depotById = new Map(depots.map((d) => [d.id, d]));
   const byDepot = new Map<number, Vehicle[]>();
   for (const v of vehicles) {
+    if (v.status === "en_route") continue; // drawn from the live feed
+
     byDepot.set(v.depotId, [...(byDepot.get(v.depotId) ?? []), v]);
   }
 
@@ -80,6 +86,19 @@ export const parkedVehiclesToGeoJSON = (
   }
   return { type: "FeatureCollection", features };
 };
+
+// vehicles on a trip, at the position streamed by the server
+export const liveVehiclesToGeoJSON = (
+  vehicles: VehicleState[],
+): FeatureCollection<GeoPoint> => ({
+  type: "FeatureCollection",
+  features: vehicles.map((v) => ({
+    type: "Feature",
+    id: v.vehicleId,
+    properties: { tripId: v.tripId, routeId: v.routeId, degree: v.degree },
+    geometry: { type: "Point", coordinates: [v.lng, v.lat] },
+  })),
+});
 
 // moves a point `meters` in direction `angle` (radians, 0 = east). Accurate enough
 // for a few hundred meters, which is all a ring around a depot needs.
