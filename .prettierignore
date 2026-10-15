@@ -1,5 +1,6 @@
 # Generated code: regenerate instead of formatting by hand.
 web/src/lib/api/schema.d.ts
+web/src/lib/ws/types.ts
 server/internal/api/gen/
 
 web/dist/

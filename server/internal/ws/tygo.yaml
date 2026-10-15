@@ -1,0 +1,6 @@
+packages:
+  - path: github.com/phogtr/gear-signal/internal/ws
+    output_path: ../../../web/src/lib/ws/types.ts
+    exclude_files: [hub.go, generate.go]
+    type_mappings:
+      time.Time: string /* RFC 3339, UTC */

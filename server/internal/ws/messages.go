@@ -9,7 +9,7 @@ import (
 // Tick is sent once a second with every vehicle currently on a trip,
 // and once on connect so a new client doesn't wait for the next tick.
 type Tick struct {
-	Type     string         `json:"type"` // always "tick"
+	Type     string         `json:"type" tstype:"\"tick\""`
 	TS       time.Time      `json:"ts"`
 	Vehicles []VehicleState `json:"vehicles"`
 }
