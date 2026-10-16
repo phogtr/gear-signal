@@ -6,7 +6,7 @@ import type {
 } from "geojson";
 
 import type { Depot, Route, Vehicle } from "../api/client";
-import type { VehicleState } from "../ws/types";
+import type { MovingVehicle } from "./motion";
 
 type Point = [lng: number, lat: number];
 
@@ -89,13 +89,13 @@ export const parkedVehiclesToGeoJSON = (
 
 // vehicles on a trip, at the position streamed by the server
 export const liveVehiclesToGeoJSON = (
-  vehicles: VehicleState[],
+  vehicles: MovingVehicle[],
 ): FeatureCollection<GeoPoint> => ({
   type: "FeatureCollection",
   features: vehicles.map((v) => ({
     type: "Feature",
     id: v.vehicleId,
-    properties: { tripId: v.tripId, routeId: v.routeId, degree: v.degree },
+    properties: { degree: v.degree },
     geometry: { type: "Point", coordinates: [v.lng, v.lat] },
   })),
 });

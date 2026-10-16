@@ -20,9 +20,18 @@ import {
   parkedVehiclesToGeoJSON,
   routesToGeoJSON,
 } from "../../lib/map/geojson";
+import { makeMotion } from "../../lib/map/motion";
+import { makePolyline, type Polyline } from "../../lib/map/polyline";
 import { themeColor } from "../../lib/theme";
 
 import type { Depot, Route, Vehicle } from "../../lib/api/client";
+
+import {
+  INFO_COLOR,
+  MUTED_FOREGROUND_COLOR,
+  SUCCESS_COLOR,
+  WARNING_COLOR,
+} from "../../constants/map";
 
 import "./map-controls.css";
 
@@ -52,6 +61,13 @@ export const CoreMap = ({ depots, routes, vehicles }: Props) => {
 
   // latest data for event handlers registered once at map creation
   const dataRef = useRef({ depots, vehicles });
+  const polylinesRef = useRef(new Map<number, Polyline>());
+
+  useEffect(() => {
+    polylinesRef.current = new Map(
+      routes.map((r) => [r.id, makePolyline(r.coordinates)]),
+    );
+  }, [routes]);
 
   // create the map once; MapLibre owns this DOM node from here on
   useEffect(() => {
@@ -70,6 +86,7 @@ export const CoreMap = ({ depots, routes, vehicles }: Props) => {
 
     map.on("load", () => {
       applyTheme(map);
+      addTriangleIcon(map);
       addCoreLayers(map);
       setReady(true);
     });
@@ -92,16 +109,44 @@ export const CoreMap = ({ depots, routes, vehicles }: Props) => {
     const map = mapRef.current;
     if (!map || !ready) return;
 
-    const sync = (vehicles = useSocketStore.getState().vehicles) =>
-      map
-        .getSource<GeoJSONSource>("live")
-        ?.setData(liveVehiclesToGeoJSON(vehicles));
+    const source = map.getSource<GeoJSONSource>("live");
+    const motion = makeMotion();
+    const isMotion = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let frame = 0;
+    let isDrawEmpty = false;
 
-    sync();
+    const draw = () => {
+      const isEmpty = motion.size() === 0;
+      if (isEmpty && isDrawEmpty) return; // nothing move, skip idle setData call
 
-    return useSocketStore.subscribe((s, prev) => {
-      if (s.vehicles !== prev.vehicles) sync(s.vehicles);
+      isDrawEmpty = isEmpty;
+      source?.setData(
+        liveVehiclesToGeoJSON(
+          motion.positions(performance.now(), polylinesRef.current, isMotion),
+        ),
+      );
+    };
+
+    const loop = () => {
+      draw();
+      frame = requestAnimationFrame(loop);
+    };
+
+    motion.update(useSocketStore.getState().vehicles, performance.now());
+
+    const unsubscribe = useSocketStore.subscribe((s, prev) => {
+      if (s.vehicles === prev.vehicles) return;
+      motion.update(s.vehicles, performance.now());
+      if (!isMotion) draw();
     });
+
+    if (isMotion) loop();
+    else draw();
+
+    return () => {
+      cancelAnimationFrame(frame);
+      unsubscribe();
+    };
   }, [ready]);
 
   // psh data into the map sources whenever it changes
@@ -155,6 +200,35 @@ const applyTheme = (map: MapLibreMap) => {
   }
 };
 
+const TRIANGLE_PX = 18;
+
+const addTriangleIcon = (map: MapLibreMap) => {
+  const ratio = 2;
+  const size = TRIANGLE_PX * ratio;
+  const ctx = document.createElement("canvas").getContext("2d");
+  if (!ctx) return;
+  ctx.canvas.width = ctx.canvas.height = size;
+
+  const inset = 3 * ratio;
+  ctx.beginPath();
+  ctx.moveTo(size / 2, inset); // (18, 6) top tip
+  ctx.lineTo(size - inset - 2 * ratio, size - inset); // (26, 30) bottom right
+  ctx.lineTo(inset + 2 * ratio, size - inset); // (10, 30) bottom left
+  ctx.closePath(); // back to (18, 6)
+  ctx.lineJoin = "round";
+
+  ctx.strokeStyle = themeColor("background");
+  ctx.lineWidth = 4.5 * ratio;
+  ctx.stroke();
+  ctx.strokeStyle = themeColor(INFO_COLOR);
+  ctx.lineWidth = 2 * ratio;
+  ctx.stroke();
+
+  map.addImage("vehicle-triangle", ctx.getImageData(0, 0, size, size), {
+    pixelRatio: ratio,
+  });
+};
+
 const empty: FeatureCollection = {
   type: "FeatureCollection",
   features: [],
@@ -172,13 +246,12 @@ const addCoreLayers = (map: MapLibreMap) => {
     source: "routes",
     layout: { "line-join": "round", "line-cap": "round" },
     paint: {
-      "line-color": themeColor("primary"),
-      "line-opacity": 0.3,
+      "line-color": themeColor("misc"),
       "line-width": ["interpolate", ["linear"], ["zoom"], 9, 1.5, 14, 4],
     },
   });
 
-  // depots are hollow rings, different from a vehicle dot
+  // depots are hollow rings
   map.addLayer({
     id: "depots",
     type: "circle",
@@ -186,11 +259,12 @@ const addCoreLayers = (map: MapLibreMap) => {
     paint: {
       "circle-radius": 7,
       "circle-color": themeColor("background"),
-      "circle-stroke-color": themeColor("warning"),
+      "circle-stroke-color": themeColor(WARNING_COLOR),
       "circle-stroke-width": 2.5,
     },
   });
 
+  // parked vehicles
   map.addLayer({
     id: "vehicles",
     type: "circle",
@@ -200,13 +274,11 @@ const addCoreLayers = (map: MapLibreMap) => {
       "circle-color": [
         "match",
         ["get", "status"],
-        "en_route",
-        themeColor("primary"),
         "charging",
-        themeColor("success"),
+        themeColor(SUCCESS_COLOR),
         "maintenance",
-        themeColor("warning"),
-        themeColor("muted-foreground"), // idle
+        themeColor(WARNING_COLOR),
+        themeColor(MUTED_FOREGROUND_COLOR), // idle
       ],
       "circle-opacity": ["match", ["get", "status"], "idle", 0.6, 1],
       "circle-stroke-color": themeColor("background"),
@@ -214,16 +286,18 @@ const addCoreLayers = (map: MapLibreMap) => {
     },
   });
 
-  // vehicles on a trip
+  // vehicles on a trip, hollow triangles
   map.addLayer({
     id: "live",
-    type: "circle",
+    type: "symbol",
     source: "live",
-    paint: {
-      "circle-radius": 4.5,
-      "circle-color": themeColor("primary"),
-      "circle-stroke-color": themeColor("background"),
-      "circle-stroke-width": 1.5,
+    layout: {
+      "icon-image": "vehicle-triangle",
+      "icon-rotate": ["get", "degree"],
+      // heading is a compass bearing, rotate with the map, not the screen
+      "icon-rotation-alignment": "map",
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
     },
   });
 
