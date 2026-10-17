@@ -25,3 +25,8 @@ const toRgba = (color: string): string => {
   const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
   return `rgba(${r}, ${g}, ${b}, ${+(a / 255).toFixed(3)})`;
 };
+
+/**
+ * Tailwind doesn't work with `bg-${token}`, tokens are applied through CSS variables instead
+ */
+export const cssColor = (token: string) => `var(--color-${token})`;
