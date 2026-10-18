@@ -37,6 +37,18 @@ export const useVehicles = () => {
   });
 };
 
+export const useActiveTrips = () => {
+  return useQuery({
+    queryKey: ["trips", "active"],
+    queryFn: async () => {
+      const { data, response } = await api.GET("/trips", {
+        params: { query: { status: "active" } },
+      });
+      return isOk(data, response, "GET /trips?status=active");
+    },
+  });
+};
+
 const isOk = <T>(data: T | undefined, response: Response, label: string): T => {
   if (!response.ok || data === undefined) {
     throw new Error(`${label} failed: HTTP ${response.status}`);

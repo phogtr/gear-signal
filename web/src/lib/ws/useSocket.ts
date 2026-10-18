@@ -9,15 +9,16 @@ const socketUrl = () => {
 };
 
 // streams vehicles into useSocketStore, and
-// refetch parked vehicles whenever a trip starts/finishes
+// refetch parked vehicles, active trips whenever a trip starts/finishes
 export const useSocket = () => {
   const queryClient = useQueryClient();
 
   useEffect(
     () =>
-      connectSocket(socketUrl(), () =>
-        queryClient.invalidateQueries({ queryKey: ["vehicles"] }),
-      ),
+      connectSocket(socketUrl(), () => {
+        queryClient.invalidateQueries({ queryKey: ["vehicles"] });
+        queryClient.invalidateQueries({ queryKey: ["trips"] });
+      }),
     [queryClient],
   );
 };

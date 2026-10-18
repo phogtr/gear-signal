@@ -1,11 +1,18 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 
 import { CoreMap } from "../../../components/map/CoreMap";
 import { MapLegend } from "../../../components/map/MapLegend";
 import { SocketStatus } from "../../../components/map/SocketStatus";
+import { VehicleDetail } from "../../../components/map/VehicleDetail";
 import { VehicleList } from "../../../components/map/VehicleList";
 
-import { useDepots, useRoutes, useVehicles } from "../../../lib/api/queries";
+import {
+  useActiveTrips,
+  useDepots,
+  useRoutes,
+  useVehicles,
+} from "../../../lib/api/queries";
+import { useSocketStore } from "../../../lib/ws/socket";
 import { useSocket } from "../../../lib/ws/useSocket";
 
 import { NotebookTabIcon } from "../../../icons/NotebookTabIcon";
@@ -17,7 +24,17 @@ export const MapPage = () => {
 
   useSocket();
 
+  const trips = useActiveTrips();
+
   const [isListOpen, setIsListOpen] = useState(true);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+
+  const clearSelection = useCallback(() => setSelectedId(null), []);
+
+  const selected = vehicles.data?.find((v) => v.id === selectedId);
+  const selectedRouteId = useSocketStore(
+    (s) => s.vehicles.find((v) => v.vehicleId === selectedId)?.routeId ?? null,
+  );
 
   const error = depots.error ?? routes.error ?? vehicles.error;
 
@@ -30,7 +47,28 @@ export const MapPage = () => {
           depots={depots.data ?? []}
           routes={routes.data ?? []}
           vehicles={vehicles.data ?? []}
+          selectedId={selectedId}
+          selectedRouteId={selectedRouteId}
+          onSelect={setSelectedId}
         />
+
+        <div className="absolute inset-x-3 bottom-16 flex flex-col gap-2 pointer-events-none sm:contents">
+          <div className="self-center sm:absolute sm:bottom-8 sm:left-1/2 sm:-translate-x-1/2">
+            <SocketStatus />
+          </div>
+
+          {selected && (
+            <div className="pointer-events-auto sm:absolute sm:top-3 sm:left-3 sm:w-72">
+              <VehicleDetail
+                vehicle={selected}
+                depots={depots.data ?? []}
+                routes={routes.data ?? []}
+                trip={trips.data?.find((t) => t.vehicleId === selected.id)}
+                onClose={clearSelection}
+              />
+            </div>
+          )}
+        </div>
 
         <div className="pointer-events-none absolute top-3 left-3 flex flex-col items-start gap-2 sm:top-auto sm:bottom-8">
           {error && (
@@ -66,10 +104,6 @@ export const MapPage = () => {
             <NotebookTabIcon />
           </span>
         </button>
-
-        <div className="pointer-events-none absolute bottom-16 left-1/2 -translate-x-1/2 sm:bottom-8">
-          <SocketStatus />
-        </div>
       </div>
 
       <div
@@ -80,6 +114,8 @@ export const MapPage = () => {
           vehicles={vehicles.data ?? []}
           depots={depots.data ?? []}
           routes={routes.data ?? []}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
         />
       </div>
     </section>

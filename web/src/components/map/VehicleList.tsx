@@ -3,6 +3,7 @@ import { useState } from "react";
 import { StatusIcon } from "./StatusIcon";
 
 import { useSocketStore } from "../../lib/ws/socket";
+import { routeLabel } from "../../lib/format";
 import { VEHICLE_STATUSES, VEHICLE_TYPE_LABELS } from "../../constants/map";
 
 import type { Depot, Route, Vehicle } from "../../lib/api/client";
@@ -13,15 +14,23 @@ interface Props {
   vehicles: Vehicle[];
   depots: Depot[];
   routes: Route[];
+  selectedId: number | null;
+  onSelect: (id: number | null) => void;
 }
 
-export const VehicleList = ({ vehicles, depots, routes }: Props) => {
+export const VehicleList = ({
+  vehicles,
+  depots,
+  routes,
+  selectedId,
+  onSelect,
+}: Props) => {
   const [filter, setFilter] = useState<Filter>("all");
 
   const vehicleStates = useSocketStore((s) => s.vehicles);
 
   const depotName = new Map(depots.map((d) => [d.id, d.name]));
-  const routeName = new Map(routes.map((r) => [r.id, r.name]));
+  const routeById = new Map(routes.map((r) => [r.id, r]));
   const live = new Map(vehicleStates.map((v) => [v.vehicleId, v]));
 
   const filtered =
@@ -73,46 +82,60 @@ export const VehicleList = ({ vehicles, depots, routes }: Props) => {
         {filtered.map((v) => {
           const s = live.get(v.id);
           const status = VEHICLE_STATUSES.find((s) => s.status === v.status)!;
+          const route = s && routeById.get(s.routeId);
           const where =
             v.status === "en_route"
-              ? s
-                ? routeName.get(s.routeId)
-                : undefined
+              ? route && routeLabel(route, depots)
               : depotName.get(v.depotId);
           const percent = s ? Math.round(s.progress * 100) : undefined;
 
           return (
             <li
               key={v.id}
-              className="px-3 py-2 border-b border-border text-xs last:border-b-0"
+              className="border-b border-border text-xs last:border-b-0"
             >
-              <div className="flex items-center gap-2">
-                <StatusIcon status={v.status} />
-                <span className="font-semibold text-sm">{v.name}</span>
-                <span className="text-muted-foreground">
-                  {VEHICLE_TYPE_LABELS[v.type]}
-                </span>
-                <span className="ml-auto">{status.label}</span>
-              </div>
-
-              <div className="mt-1 pl-4.5 flex items-center gap-2 text-muted-foreground">
-                <span className="truncate">{where ?? "—"}</span>
-                {percent !== undefined && (
-                  <span className="ml-auto tabular-nums">{percent}%</span>
-                )}
-              </div>
-
-              {percent !== undefined && (
-                <div
-                  aria-hidden="true"
-                  className="mt-1 ml-4.5 h-0.5 overflow-hidden rounded-full bg-muted"
-                >
-                  <div
-                    className="h-full bg-info"
-                    style={{ width: `${percent}%` }}
-                  />
+              <button
+                type="button"
+                aria-pressed={selectedId === v.id}
+                onClick={() => onSelect(selectedId === v.id ? null : v.id)}
+                className={`block w-full px-3 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary ${
+                  selectedId === v.id ? "bg-muted" : "hover:bg-muted/50"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <StatusIcon status={v.status} />
+                  <span className="font-semibold text-sm">{v.name}</span>
+                  <span className="text-muted-foreground">
+                    {VEHICLE_TYPE_LABELS[v.type]}
+                  </span>
+                  <span className="ml-auto">{status.label}</span>
                 </div>
-              )}
+
+                <div className="mt-1 pl-4.5 flex items-center gap-2 text-muted-foreground">
+                  {/* min-w-0 lets flex item shrink so truncate can ellipsize; 
+                      shows full text on hover */}
+                  <span className="min-w-0 truncate" title={where}>
+                    {where ?? "—"}
+                  </span>
+                  {percent !== undefined && (
+                    <span className="ml-auto shrink-0 tabular-nums">
+                      {percent}%
+                    </span>
+                  )}
+                </div>
+
+                {percent !== undefined && (
+                  <div
+                    aria-hidden="true"
+                    className="mt-1 ml-4.5 h-0.5 overflow-hidden rounded-full bg-muted"
+                  >
+                    <div
+                      className="h-full bg-info"
+                      style={{ width: `${percent}%` }}
+                    />
+                  </div>
+                )}
+              </button>
             </li>
           );
         })}

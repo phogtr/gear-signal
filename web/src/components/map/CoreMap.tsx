@@ -21,6 +21,7 @@ import {
   routesToGeoJSON,
 } from "../../lib/map/geojson";
 import { makeMotion } from "../../lib/map/motion";
+import { isInView, overlayPadding } from "../../lib/map/view";
 import { makePolyline, type Polyline } from "../../lib/map/polyline";
 import { themeColor } from "../../lib/theme";
 
@@ -51,9 +52,23 @@ interface Props {
   depots: Depot[];
   routes: Route[];
   vehicles: Vehicle[];
+  selectedId: number | null;
+  selectedRouteId: number | null;
+  onSelect: (id: number | null) => void;
 }
 
-export const CoreMap = ({ depots, routes, vehicles }: Props) => {
+// click within this pixels of a vehicle selects it (dots are 7 px)
+const HIT_PX = 6;
+const NONE = -1;
+
+export const CoreMap = ({
+  depots,
+  routes,
+  vehicles,
+  selectedId,
+  selectedRouteId,
+  onSelect,
+}: Props) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [ready, setReady] = useState(false);
@@ -62,12 +77,7 @@ export const CoreMap = ({ depots, routes, vehicles }: Props) => {
   // latest data for event handlers registered once at map creation
   const dataRef = useRef({ depots, vehicles });
   const polylinesRef = useRef(new Map<number, Polyline>());
-
-  useEffect(() => {
-    polylinesRef.current = new Map(
-      routes.map((r) => [r.id, makePolyline(r.coordinates)]),
-    );
-  }, [routes]);
+  const onSelectRef = useRef(onSelect);
 
   // create the map once; MapLibre owns this DOM node from here on
   useEffect(() => {
@@ -90,6 +100,25 @@ export const CoreMap = ({ depots, routes, vehicles }: Props) => {
       addCoreLayers(map);
       setReady(true);
     });
+
+    // click a vehicle selects it, click empty map clears selection
+    const vehicleAt = (point: { x: number; y: number }) =>
+      map.queryRenderedFeatures(
+        [
+          [point.x - HIT_PX, point.y - HIT_PX],
+          [point.x + HIT_PX, point.y + HIT_PX],
+        ],
+        { layers: ["live", "vehicles"] },
+      )[0];
+
+    map.on("click", (e) => {
+      const f = vehicleAt(e.point);
+      onSelectRef.current(f ? Number(f.id) : null);
+    });
+    map.on("mousemove", (e) => {
+      map.getCanvas().style.cursor = vehicleAt(e.point) ? "pointer" : "";
+    });
+
     map.on("zoom", () =>
       syncVehicles(map, dataRef.current.vehicles, dataRef.current.depots),
     );
@@ -102,6 +131,16 @@ export const CoreMap = ({ depots, routes, vehicles }: Props) => {
       setReady(false);
     };
   }, []);
+
+  useEffect(() => {
+    polylinesRef.current = new Map(
+      routes.map((r) => [r.id, makePolyline(r.coordinates)]),
+    );
+  }, [routes]);
+
+  useEffect(() => {
+    onSelectRef.current = onSelect;
+  }, [onSelect]);
 
   // subscribe outside React so a tick
   // updates one map source without re-rendering the page
@@ -149,7 +188,42 @@ export const CoreMap = ({ depots, routes, vehicles }: Props) => {
     };
   }, [ready]);
 
-  // psh data into the map sources whenever it changes
+  // highlight selection
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+
+    map.setFilter("route-selected", ["==", ["id"], selectedRouteId ?? NONE]);
+    map.setFilter("vehicle-selected", ["==", ["id"], selectedId ?? NONE]);
+    map.setFilter("live-selected", ["==", ["id"], selectedId ?? NONE]);
+  }, [ready, selectedId, selectedRouteId]);
+
+  // pan into selected vehicle but only if it's off-screen or under an overlay
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || selectedId === null) return;
+
+    const live = useSocketStore
+      .getState()
+      .vehicles.find((v) => v.vehicleId === selectedId);
+    const parked = dataRef.current.vehicles.find((v) => v.id === selectedId);
+    const depot = dataRef.current.depots.find((d) => d.id === parked?.depotId);
+    const target: [number, number] | undefined = live
+      ? [live.lng, live.lat]
+      : depot && [depot.lon, depot.lat];
+
+    if (!target) return;
+
+    const { clientWidth: width, clientHeight: height } = map.getContainer();
+    const padding = overlayPadding(width < 640); // Tailwind's sm breakpoint
+
+    if (isInView(map.project(target), width, height, padding)) return;
+
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    map.easeTo({ center: target, padding, duration: reduce ? 0 : 600 });
+  }, [ready, selectedId]);
+
+  // push data into the map sources whenever it changes
   useEffect(() => {
     dataRef.current = { depots, vehicles };
 
@@ -246,8 +320,22 @@ const addCoreLayers = (map: MapLibreMap) => {
     source: "routes",
     layout: { "line-join": "round", "line-cap": "round" },
     paint: {
-      "line-color": themeColor("misc"),
+      "line-color": themeColor(INFO_COLOR),
+      "line-opacity": 0.3,
       "line-width": ["interpolate", ["linear"], ["zoom"], 9, 1.5, 14, 4],
+    },
+  });
+
+  // selected vehicle's route
+  map.addLayer({
+    id: "route-selected",
+    type: "line",
+    source: "routes",
+    filter: ["==", ["id"], NONE],
+    layout: { "line-join": "round", "line-cap": "round" },
+    paint: {
+      "line-color": themeColor(INFO_COLOR),
+      "line-width": ["interpolate", ["linear"], ["zoom"], 9, 2.5, 14, 6],
     },
   });
 
@@ -284,6 +372,29 @@ const addCoreLayers = (map: MapLibreMap) => {
       "circle-stroke-color": themeColor("background"),
       "circle-stroke-width": 1,
     },
+  });
+
+  // ring around selected vehicle, parked/moving
+  const selectedRing = {
+    type: "circle" as const,
+    filter: ["==", ["id"], NONE] as ["==", ["id"], number],
+    paint: {
+      "circle-color": "rgba(0, 0, 0, 0)",
+      "circle-stroke-color": themeColor("foreground"),
+      "circle-stroke-width": 2,
+    },
+  };
+  map.addLayer({
+    ...selectedRing,
+    id: "vehicle-selected",
+    source: "vehicles",
+    paint: { ...selectedRing.paint, "circle-radius": 8 },
+  });
+  map.addLayer({
+    ...selectedRing,
+    id: "live-selected",
+    source: "live",
+    paint: { ...selectedRing.paint, "circle-radius": 13 },
   });
 
   // vehicles on a trip, hollow triangles
