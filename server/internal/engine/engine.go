@@ -77,7 +77,11 @@ func New(ctx context.Context, st Store, writer Sender, multiplier float64, demoT
 		if err != nil {
 			return nil, err
 		}
-		slog.Info("resumed trip", "trip", t.ID, "vehicle", t.VehicleID, "eta", eta.Format(time.TimeOnly))
+		// save ETA; if SIM_SPEED changed, previous ETA would be diff from now
+		if err := st.SetTripETA(ctx, t.ID, eta); err != nil {
+			slog.Error("resume: set eta", "err", err)
+		}
+		slog.Info("resumed trip", "trip", t.ID, "vehicle", t.VehicleID, "eta", eta.Local().Format(time.TimeOnly))
 	}
 
 	return &Engine{
@@ -160,5 +164,5 @@ func (e *Engine) direct(ctx context.Context, now time.Time) {
 	if err := e.store.SetTripETA(ctx, tripID, eta); err != nil {
 		slog.Error("director", "err", err)
 	}
-	slog.Info("started trip", "trip", tripID, "vehicle", vehicleID, "route", routeID, "eta", eta.Format(time.TimeOnly))
+	slog.Info("started trip", "trip", tripID, "vehicle", vehicleID, "route", routeID, "eta", eta.Local().Format(time.TimeOnly))
 }

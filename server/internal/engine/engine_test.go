@@ -171,3 +171,25 @@ func TestDirectOffWhenDemoTripsIsZero(t *testing.T) {
 		t.Errorf("director started %d trips while off", len(fs.trips))
 	}
 }
+
+func TestNewRewritesETAForResumedTrips(t *testing.T) {
+	fs := &fakeStore{routes: []store.Route{route}, trips: []store.Trip{activeTrip(1, 7, t0)}}
+
+	if _, err := New(context.Background(), fs, nil, 1, 0); err != nil {
+		t.Fatal(err)
+	}
+	etaAt1 := fs.etas[1]
+
+	// a restart with SIM_SPEED 10 must store an ETA 10x closer to the start
+	if _, err := New(context.Background(), fs, nil, 10, 0); err != nil {
+		t.Fatal(err)
+	}
+	etaAt10 := fs.etas[1]
+	if etaAt1.IsZero() || etaAt10.IsZero() {
+		t.Fatalf("eta not written: %v, %v", etaAt1, etaAt10)
+	}
+	ratio := etaAt1.Sub(t0).Seconds() / etaAt10.Sub(t0).Seconds()
+	if ratio < 9.999 || ratio > 10.001 {
+		t.Errorf("travel time ratio = %.4f, want 10", ratio)
+	}
+}
