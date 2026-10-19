@@ -76,6 +76,76 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+    post:
+      operationId: createTrip
+      description: >
+        Schedules a trip after the vehicle's last scheduled or active trip. The route must
+        start where the vehicle will be by then, and the start must not overlap the earlier
+        trip's reserved time (its worst-case duration).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/NewTrip" }
+      responses:
+        "201":
+          description: The scheduled trip
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
+        "404":
+          description: Vehicle or route not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: Overlaps the vehicle's other trips
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: Start not in the future, wrong origin depot, or vehicle in maintenance
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /trips/{id}:
+    patch:
+      operationId: updateTrip
+      description: >
+        Cancels a scheduled trip. Only the last trip of a vehicle's chain can be cancelled,
+        because later trips start where it ends.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TripPatch" }
+      responses:
+        "200":
+          description: The cancelled trip
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Trip" }
+        "404":
+          description: Trip not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "409":
+          description: Trip is not scheduled, or a later trip depends on it
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: Unsupported status change
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
 
 components:
   schemas:
@@ -168,6 +238,23 @@ components:
         eta: { type: string, format: date-time }
         completedAt: { type: string, format: date-time }
         status: { $ref: "#/components/schemas/TripStatus" }
+
+    NewTrip:
+      type: object
+      required: [vehicleId, routeId, scheduledStart]
+      properties:
+        vehicleId: { type: integer, format: int64 }
+        routeId: { type: integer, format: int64 }
+        scheduledStart: { type: string, format: date-time }
+
+    TripPatch:
+      type: object
+      required: [status]
+      properties:
+        status:
+          description: The only supported change is scheduled -> cancelled.
+          type: string
+          enum: [cancelled]
 
     Error:
       type: object

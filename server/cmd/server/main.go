@@ -65,7 +65,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           api.NewRouter(st, hub),
+		Handler:           api.NewRouter(st, hub, cfg.SimSpeed),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	srv.RegisterOnShutdown(hub.Close)

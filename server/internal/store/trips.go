@@ -20,10 +20,35 @@ type Trip struct {
 	Status         string     `db:"status"`
 }
 
+const tripColumns = `id, vehicle_id, route_id, scheduled_start, started_at, eta, completed_at, status`
+
+type NotFoundError struct {
+	What string
+	ID   int64
+}
+
+func (e *NotFoundError) Error() string { return fmt.Sprintf("%s %d not found", e.What, e.ID) }
+
+type PlannedTrip struct {
+	ID                 int64      `db:"id"`
+	Status             string     `db:"status"`
+	ScheduledStart     time.Time  `db:"scheduled_start"`
+	StartedAt          *time.Time `db:"started_at"`
+	ETA                *time.Time `db:"eta"`
+	OriginDepotID      int64      `db:"origin_depot_id"`
+	DestinationDepotID int64      `db:"destination_depot_id"`
+	DurationS          int        `db:"duration_s"`
+}
+
+type Plan struct {
+	Vehicle Vehicle
+	Trips   []PlannedTrip
+}
+
 // nil status returns all trips
 func (s *Store) ListTrips(ctx context.Context, status *string) ([]Trip, error) {
 	rows, err := s.pool.Query(ctx, `
-	SELECT id, vehicle_id, route_id, scheduled_start, started_at, eta, completed_at, status
+	SELECT `+tripColumns+`
 		FROM trips
 		WHERE $1::text IS NULL OR status = $1
 		ORDER BY scheduled_start`, status)
@@ -57,8 +82,6 @@ func (s *Store) CompleteTrip(ctx context.Context, tripID int64, completedAt time
 	return nil
 }
 
-// creates an active trip and sets the vehicle en_route, only if the vehicle is
-// idle and parked at the route's origin depot
 func (s *Store) StartTrip(ctx context.Context, vehicleID, routeID int64, startedAt time.Time) (int64, error) {
 	var id int64
 	err := s.pool.QueryRow(ctx, `
@@ -87,4 +110,115 @@ func (s *Store) SetTripETA(ctx context.Context, tripID int64, eta time.Time) err
 		return fmt.Errorf("set eta for trip %d: %w", tripID, err)
 	}
 	return nil
+}
+
+func (s *Store) CreateTrip(ctx context.Context, vehicleID, routeID int64, start time.Time, check func(Plan, Route) error) (Trip, error) {
+	var trip Trip
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		plan, err := lockPlan(ctx, tx, vehicleID)
+		if err != nil {
+			return err
+		}
+
+		var r Route
+		err = tx.QueryRow(ctx, `
+			SELECT id, name, origin_depot_id, destination_depot_id, distance_m, duration_s
+			FROM routes WHERE id = $1`, routeID,
+		).Scan(&r.ID, &r.Name, &r.OriginDepotID, &r.DestinationDepotID, &r.DistanceM, &r.DurationS)
+
+		if errors.Is(err, pgx.ErrNoRows) {
+			return &NotFoundError{What: "route", ID: routeID}
+		}
+		if err != nil {
+			return fmt.Errorf("load route %d: %w", routeID, err)
+		}
+
+		if err := check(plan, r); err != nil {
+			return err
+		}
+
+		rows, _ := tx.Query(ctx, `
+			INSERT INTO trips (vehicle_id, route_id, scheduled_start)
+			VALUES ($1, $2, $3)
+			RETURNING `+tripColumns, vehicleID, routeID, start)
+		trip, err = pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Trip])
+
+		if err != nil {
+			return fmt.Errorf("insert trip: %w", err)
+		}
+		return nil
+	})
+	return trip, err
+}
+
+func (s *Store) CancelTrip(ctx context.Context, tripID int64, check func(Plan, Trip) error) (Trip, error) {
+	var trip Trip
+	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+		var vehicleID int64
+		err := tx.QueryRow(ctx, `SELECT vehicle_id FROM trips WHERE id = $1`, tripID).Scan(&vehicleID)
+
+		if errors.Is(err, pgx.ErrNoRows) {
+			return &NotFoundError{What: "trip", ID: tripID}
+		}
+		if err != nil {
+			return fmt.Errorf("load trip %d: %w", tripID, err)
+		}
+
+		plan, err := lockPlan(ctx, tx, vehicleID)
+		if err != nil {
+			return err
+		}
+
+		rows, _ := tx.Query(ctx, `SELECT `+tripColumns+` FROM trips WHERE id = $1`, tripID)
+		target, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Trip])
+
+		if err != nil {
+			return fmt.Errorf("load trip %d: %w", tripID, err)
+		}
+
+		if err := check(plan, target); err != nil {
+			return err
+		}
+
+		rows, _ = tx.Query(ctx, `
+			UPDATE trips SET status = 'cancelled'
+			WHERE id = $1 AND status = 'scheduled'
+			RETURNING `+tripColumns, tripID)
+		trip, err = pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Trip])
+
+		if err != nil {
+			return fmt.Errorf("cancel trip %d: %w", tripID, err)
+		}
+		return nil
+	})
+	return trip, err
+}
+
+// lock vehicle row (FOR UPDATE) and loads its plan
+func lockPlan(ctx context.Context, tx pgx.Tx, vehicleID int64) (Plan, error) {
+	rows, _ := tx.Query(ctx, `
+		SELECT id, name, plate, type, status, depot_id
+		FROM vehicles WHERE id = $1 FOR UPDATE`, vehicleID)
+	v, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Vehicle])
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Plan{}, &NotFoundError{What: "vehicle", ID: vehicleID}
+	}
+	if err != nil {
+		return Plan{}, fmt.Errorf("lock vehicle %d: %w", vehicleID, err)
+	}
+
+	rows, _ = tx.Query(ctx, `
+		SELECT t.id, t.status, t.scheduled_start, t.started_at, t.eta,
+			r.origin_depot_id, r.destination_depot_id, r.duration_s
+		FROM trips t JOIN routes r ON r.id = t.route_id
+		WHERE t.vehicle_id = $1 AND t.status IN ('scheduled', 'active')
+		ORDER BY COALESCE(t.started_at, t.scheduled_start)`, vehicleID)
+	trips, err := pgx.CollectRows(rows, pgx.RowToStructByName[PlannedTrip])
+
+	if err != nil {
+		return Plan{}, fmt.Errorf("load trips of vehicle %d: %w", vehicleID, err)
+	}
+
+	return Plan{Vehicle: v, Trips: trips}, nil
 }

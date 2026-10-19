@@ -77,11 +77,29 @@ export interface paths {
         };
         get: operations["listTrips"];
         put?: never;
-        post?: never;
+        /** @description Schedules a trip after the vehicle's last scheduled or active trip. The route must start where the vehicle will be by then, and the start must not overlap the earlier trip's reserved time (its worst-case duration). */
+        post: operations["createTrip"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/trips/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Cancels a scheduled trip. Only the last trip of a vehicle's chain can be cancelled, because later trips start where it ends. */
+        patch: operations["updateTrip"];
         trace?: never;
     };
 }
@@ -161,6 +179,21 @@ export interface components {
             /** Format: date-time */
             completedAt?: string;
             status: components["schemas"]["TripStatus"];
+        };
+        NewTrip: {
+            /** Format: int64 */
+            vehicleId: number;
+            /** Format: int64 */
+            routeId: number;
+            /** Format: date-time */
+            scheduledStart: string;
+        };
+        TripPatch: {
+            /**
+             * @description The only supported change is scheduled -> cancelled.
+             * @enum {string}
+             */
+            status: "cancelled";
         };
         Error: {
             message: string;
@@ -285,6 +318,110 @@ export interface operations {
             };
             /** @description Invalid query parameter */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    createTrip: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewTrip"];
+            };
+        };
+        responses: {
+            /** @description The scheduled trip */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trip"];
+                };
+            };
+            /** @description Vehicle or route not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Overlaps the vehicle's other trips */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Start not in the future, wrong origin depot, or vehicle in maintenance */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    updateTrip: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TripPatch"];
+            };
+        };
+        responses: {
+            /** @description The cancelled trip */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Trip"];
+                };
+            };
+            /** @description Trip not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Trip is not scheduled, or a later trip depends on it */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported status change */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
