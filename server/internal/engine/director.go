@@ -6,16 +6,17 @@ import (
 	"github.com/phogtr/gear-signal/internal/store"
 )
 
-// chooses a random idle vehicle and a random route leaving its depot,
-// unless target vehicles are already en route. Charging and maintenance vehicles stay put
-func pickTrip(rng *rand.Rand, vehicles []store.Vehicle, routesByOrigin map[int64][]int64, target int) (vehicleID, routeID int64, ok bool) {
+// choose a random idle vehicle & a random route leaving its depot.
+// If target count reached, then return ok = false.
+// Skip en_route, charging, maintenance, & scheduled.
+func pickTrip(rng *rand.Rand, vehicles []store.Vehicle, planned map[int64]bool, routesByOrigin map[int64][]int64, target int) (vehicleID, routeID int64, ok bool) {
 	enRoute := 0
 	var idle []store.Vehicle
 	for _, v := range vehicles {
 		switch {
 		case v.Status == "en_route":
 			enRoute++
-		case v.Status == "idle" && len(routesByOrigin[v.DepotID]) > 0:
+		case v.Status == "idle" && !planned[v.ID] && len(routesByOrigin[v.DepotID]) > 0:
 			idle = append(idle, v)
 		}
 	}

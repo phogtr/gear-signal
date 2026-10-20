@@ -17,6 +17,8 @@ type Store interface {
 	ListTrips(ctx context.Context, status *string) ([]store.Trip, error)
 	ListVehicles(ctx context.Context) ([]store.Vehicle, error)
 	StartTrip(ctx context.Context, vehicleID, routeID int64, startedAt time.Time) (int64, error)
+	ListScheduledReadyTrips(ctx context.Context, now time.Time) ([]store.Trip, error)
+	StartScheduledTrip(ctx context.Context, tripID int64, startedAt time.Time) (bool, error)
 	SetTripETA(ctx context.Context, tripID int64, eta time.Time) error
 	CompleteTrip(ctx context.Context, tripID int64, completedAt time.Time) error
 }
@@ -106,6 +108,7 @@ func (e *Engine) Run(ctx context.Context) {
 			return
 		case now := <-ticker.C:
 			e.step(ctx, now)
+			e.startScheduled(ctx, now)
 		case now := <-director.C:
 			e.direct(ctx, now)
 		}
@@ -133,6 +136,28 @@ func (e *Engine) step(ctx context.Context, now time.Time) []sim.State {
 	return states
 }
 
+// start scheduled ready/late trips. Vehicle not at
+// origin yet stay scheduled & retry next tick
+func (e *Engine) startScheduled(ctx context.Context, now time.Time) {
+	trips, err := e.store.ListScheduledReadyTrips(ctx, now)
+	if err != nil {
+		slog.Error("scheduler: list scheduled ready trips", "err", err)
+		return
+	}
+
+	for _, t := range trips {
+		startedAt := now.Truncate(time.Microsecond)
+		started, err := e.store.StartScheduledTrip(ctx, t.ID, startedAt)
+		if err != nil {
+			slog.Error("scheduler", "err", err)
+			continue
+		}
+		if started {
+			e.launch(ctx, sim.Trip{ID: t.ID, VehicleID: t.VehicleID, RouteID: t.RouteID, StartedAt: startedAt})
+		}
+	}
+}
+
 func (e *Engine) direct(ctx context.Context, now time.Time) {
 	if e.demoTrips == 0 {
 		return
@@ -142,7 +167,19 @@ func (e *Engine) direct(ctx context.Context, now time.Time) {
 		slog.Error("director: list vehicles", "err", err)
 		return
 	}
-	vehicleID, routeID, ok := pickTrip(e.rng, vehicles, e.routesByOrigin, e.demoTrips)
+
+	status := "scheduled"
+	scheduled, err := e.store.ListTrips(ctx, &status)
+	if err != nil {
+		slog.Error("director: list scheduled trips", "err", err)
+		return
+	}
+	planned := map[int64]bool{}
+	for _, t := range scheduled {
+		planned[t.VehicleID] = true
+	}
+
+	vehicleID, routeID, ok := pickTrip(e.rng, vehicles, planned, e.routesByOrigin, e.demoTrips)
 	if !ok {
 		return
 	}
@@ -154,15 +191,19 @@ func (e *Engine) direct(ctx context.Context, now time.Time) {
 		slog.Error("director", "err", err)
 		return
 	}
+	e.launch(ctx, sim.Trip{ID: tripID, VehicleID: vehicleID, RouteID: routeID, StartedAt: startedAt})
+}
 
-	eta, err := e.sim.Start(sim.Trip{ID: tripID, VehicleID: vehicleID, RouteID: routeID, StartedAt: startedAt})
+// simulate a trip that already active in DB & saves its ETA
+func (e *Engine) launch(ctx context.Context, t sim.Trip) {
+	eta, err := e.sim.Start(t)
 	if err != nil {
 		// active in DB but not simulated; next boot resumes it
-		slog.Error("director: simulate trip", "trip", tripID, "err", err)
+		slog.Error("simulate trip", "trip", t.ID, "err", err)
 		return
 	}
-	if err := e.store.SetTripETA(ctx, tripID, eta); err != nil {
-		slog.Error("director", "err", err)
+	if err := e.store.SetTripETA(ctx, t.ID, eta); err != nil {
+		slog.Error("set eta", "trip", t.ID, "err", err)
 	}
-	slog.Info("started trip", "trip", tripID, "vehicle", vehicleID, "route", routeID, "eta", eta.Local().Format(time.TimeOnly))
+	slog.Info("started trip", "trip", t.ID, "vehicle", t.VehicleID, "route", t.RouteID, "eta", eta.Local().Format(time.TimeOnly))
 }

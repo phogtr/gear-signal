@@ -59,11 +59,73 @@ func (f *fakeStore) CompleteTrip(_ context.Context, id int64, _ time.Time) error
 		return errors.New("db down")
 	}
 	f.completed = append(f.completed, id)
+	if t := f.trip(id); t != nil {
+		t.Status = "completed"
+		if v := f.vehicle(t.VehicleID); v != nil {
+			v.Status = "idle"
+			v.DepotID = f.route(t.RouteID).DestinationDepotID
+		}
+	}
 	return nil
+}
+
+func (f *fakeStore) ListScheduledReadyTrips(_ context.Context, now time.Time) ([]store.Trip, error) {
+	var out []store.Trip
+	for _, t := range f.trips {
+		if t.Status == "scheduled" && !t.ScheduledStart.After(now) {
+			out = append(out, t)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeStore) StartScheduledTrip(_ context.Context, id int64, startedAt time.Time) (bool, error) {
+	t := f.trip(id)
+	v := f.vehicle(t.VehicleID)
+	if t.Status != "scheduled" || (v.Status != "idle" && v.Status != "charging") || v.DepotID != f.route(t.RouteID).OriginDepotID {
+		return false, nil
+	}
+	v.Status = "en_route"
+	t.Status = "active"
+	t.StartedAt = &startedAt
+	return true, nil
+}
+
+func (f *fakeStore) trip(id int64) *store.Trip {
+	for i := range f.trips {
+		if f.trips[i].ID == id {
+			return &f.trips[i]
+		}
+	}
+	return nil
+}
+
+func (f *fakeStore) vehicle(id int64) *store.Vehicle {
+	for i := range f.vehicles {
+		if f.vehicles[i].ID == id {
+			return &f.vehicles[i]
+		}
+	}
+	return nil
+}
+
+func (f *fakeStore) route(id int64) store.Route {
+	for _, r := range f.routes {
+		if r.ID == id {
+			return r
+		}
+	}
+	return store.Route{}
 }
 
 // ≈ 1,112 m east along the equator in 100 s.
 var route = store.Route{ID: 1, OriginDepotID: 1, DestinationDepotID: 2, Coordinates: [][2]float64{{0, 0}, {0.01, 0}}, DurationS: 100}
+
+var routeBack = store.Route{ID: 2, OriginDepotID: 2, DestinationDepotID: 1, Coordinates: [][2]float64{{0.01, 0}, {0, 0}}, DurationS: 100}
+
+func scheduledTrip(id, vehicle, routeID int64, start time.Time) store.Trip {
+	return store.Trip{ID: id, VehicleID: vehicle, RouteID: routeID, Status: "scheduled", ScheduledStart: start}
+}
 
 func activeTrip(id, vehicle int64, startedAt time.Time) store.Trip {
 	return store.Trip{ID: id, VehicleID: vehicle, RouteID: 1, Status: "active", StartedAt: &startedAt}
@@ -191,5 +253,78 @@ func TestNewRewritesETAForResumedTrips(t *testing.T) {
 	ratio := etaAt1.Sub(t0).Seconds() / etaAt10.Sub(t0).Seconds()
 	if ratio < 9.999 || ratio > 10.001 {
 		t.Errorf("travel time ratio = %.4f, want 10", ratio)
+	}
+}
+
+func TestStartScheduledStartsTripsWhenDue(t *testing.T) {
+	fs := &fakeStore{
+		routes:   []store.Route{route},
+		vehicles: []store.Vehicle{{ID: 7, Status: "idle", DepotID: 1}},
+		trips:    []store.Trip{scheduledTrip(1, 7, 1, t0.Add(10*time.Second))},
+	}
+	e, err := New(context.Background(), fs, nil, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	e.startScheduled(ctx, t0)
+	if fs.trips[0].Status != "scheduled" {
+		t.Fatalf("started before its time: %+v", fs.trips[0])
+	}
+
+	now := t0.Add(10 * time.Second)
+	e.startScheduled(ctx, now)
+	if fs.trips[0].Status != "active" || !fs.trips[0].StartedAt.Equal(now) || fs.vehicles[0].Status != "en_route" {
+		t.Fatalf("not started when due: trip %+v, vehicle %+v", fs.trips[0], fs.vehicles[0])
+	}
+	if !fs.etas[1].After(now) {
+		t.Errorf("eta = %v, want after the start", fs.etas[1])
+	}
+	if got := e.step(ctx, now.Add(time.Second)); len(got) != 1 || got[0].TripID != 1 {
+		t.Errorf("want trip 1 simulated, got %+v", got)
+	}
+}
+
+func TestStartScheduledLateStartWaitsForTheVehicle(t *testing.T) {
+	// trip 1 drives depot 1 -> 2 for 100 s; trip 2 (2 -> 1) is due while it is still driving
+	fs := &fakeStore{
+		routes:   []store.Route{route, routeBack},
+		vehicles: []store.Vehicle{{ID: 7, Status: "en_route", DepotID: 1}},
+		trips:    []store.Trip{activeTrip(1, 7, t0), scheduledTrip(2, 7, 2, t0.Add(30*time.Second))},
+	}
+	e, err := New(context.Background(), fs, nil, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	e.startScheduled(ctx, t0.Add(30*time.Second))
+	if fs.trips[1].Status != "scheduled" {
+		t.Fatalf("started while the vehicle is still on trip 1: %+v", fs.trips[1])
+	}
+
+	// each tick: step completes trip 1 (vehicle parks at depot 2), then startScheduled starts trip 2
+	arrived := t0.Add(5 * time.Minute)
+	e.step(ctx, arrived)
+	e.startScheduled(ctx, arrived)
+	if fs.trips[1].Status != "active" || !fs.trips[1].StartedAt.Equal(arrived) {
+		t.Errorf("late trip not started on arrival: %+v", fs.trips[1])
+	}
+}
+
+func TestStartScheduledStartsChargingVehicle(t *testing.T) {
+	fs := &fakeStore{
+		routes:   []store.Route{route},
+		vehicles: []store.Vehicle{{ID: 7, Status: "charging", DepotID: 1}},
+		trips:    []store.Trip{scheduledTrip(1, 7, 1, t0)},
+	}
+	e, err := New(context.Background(), fs, nil, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.startScheduled(context.Background(), t0)
+	if fs.trips[0].Status != "active" {
+		t.Errorf("charging vehicle didn't leave for its scheduled trip: %+v", fs.trips[0])
 	}
 }

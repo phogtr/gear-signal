@@ -22,7 +22,7 @@ func TestPickTrip(t *testing.T) {
 		}
 		depotOf := map[int64]int64{1: 1, 2: 2}
 		for range 200 {
-			v, r, ok := pickTrip(rng, vehicles, routesByOrigin, 12)
+			v, r, ok := pickTrip(rng, vehicles, nil, routesByOrigin, 12)
 			if !ok {
 				t.Fatal("want a pick")
 			}
@@ -42,15 +42,31 @@ func TestPickTrip(t *testing.T) {
 			{ID: 2, Status: "en_route", DepotID: 1},
 			{ID: 3, Status: "idle", DepotID: 1},
 		}
-		if _, _, ok := pickTrip(rng, vehicles, routesByOrigin, 2); ok {
+		if _, _, ok := pickTrip(rng, vehicles, nil, routesByOrigin, 2); ok {
 			t.Error("want no pick at target")
 		}
 	})
 
 	t.Run("nothing when no vehicle is idle", func(t *testing.T) {
 		vehicles := []store.Vehicle{{ID: 1, Status: "charging", DepotID: 1}}
-		if _, _, ok := pickTrip(rng, vehicles, routesByOrigin, 12); ok {
+		if _, _, ok := pickTrip(rng, vehicles, nil, routesByOrigin, 12); ok {
 			t.Error("want no pick")
+		}
+	})
+
+	t.Run("skips vehicles with scheduled trips", func(t *testing.T) {
+		vehicles := []store.Vehicle{
+			{ID: 1, Status: "idle", DepotID: 1},
+			{ID: 2, Status: "idle", DepotID: 1},
+		}
+		for range 50 {
+			v, _, ok := pickTrip(rng, vehicles, map[int64]bool{1: true}, routesByOrigin, 12)
+			if !ok || v != 2 {
+				t.Fatalf("picked %d (ok %v), want 2", v, ok)
+			}
+		}
+		if _, _, ok := pickTrip(rng, vehicles, map[int64]bool{1: true, 2: true}, routesByOrigin, 12); ok {
+			t.Error("want no pick when every idle vehicle is planned")
 		}
 	})
 }
