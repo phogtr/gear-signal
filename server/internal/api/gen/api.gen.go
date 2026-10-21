@@ -97,6 +97,16 @@ func (e VehicleType) Valid() bool {
 	}
 }
 
+// Availability defines model for Availability.
+type Availability struct {
+	// AvailableAt Earliest start for a new trip: now, or when the vehicle's last planned trip can be done. The start must also be strictly after the request time.
+	AvailableAt time.Time `json:"availableAt"`
+
+	// DepotId Depot where the vehicle will be after its planned trips; a new trip's route must leave it.
+	DepotId   int64 `json:"depotId"`
+	VehicleId int64 `json:"vehicleId"`
+}
+
 // Depot defines model for Depot.
 type Depot struct {
 	Id  int64   `json:"id"`
@@ -222,6 +232,9 @@ type ServerInterface interface {
 
 	// (GET /vehicles)
 	ListVehicles(w http.ResponseWriter, r *http.Request)
+
+	// (GET /vehicles/available)
+	ListAvailable(w http.ResponseWriter, r *http.Request)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -260,6 +273,11 @@ func (_ Unimplemented) UpdateTrip(w http.ResponseWriter, r *http.Request, id int
 
 // (GET /vehicles)
 func (_ Unimplemented) ListVehicles(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /vehicles/available)
+func (_ Unimplemented) ListAvailable(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -401,6 +419,20 @@ func (siw *ServerInterfaceWrapper) ListVehicles(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// ListAvailable operation middleware
+func (siw *ServerInterfaceWrapper) ListAvailable(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAvailable(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -525,6 +557,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/vehicles", wrapper.ListVehicles)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/vehicles/available", wrapper.ListAvailable)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/trips", wrapper.ListTrips)
@@ -802,6 +837,27 @@ func (response ListVehicles200JSONResponse) VisitListVehiclesResponse(w http.Res
 	return err
 }
 
+type ListAvailableRequestObject struct {
+}
+
+type ListAvailableResponseObject interface {
+	VisitListAvailableResponse(w http.ResponseWriter) error
+}
+
+type ListAvailable200JSONResponse []Availability
+
+func (response ListAvailable200JSONResponse) VisitListAvailableResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 
@@ -825,6 +881,9 @@ type StrictServerInterface interface {
 
 	// (GET /vehicles)
 	ListVehicles(ctx context.Context, request ListVehiclesRequestObject) (ListVehiclesResponseObject, error)
+
+	// (GET /vehicles/available)
+	ListAvailable(ctx context.Context, request ListAvailableRequestObject) (ListAvailableResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -1045,6 +1104,30 @@ func (sh *strictHandler) ListVehicles(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListVehiclesResponseObject); ok {
 		if err := validResponse.VisitListVehiclesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListAvailable operation middleware
+func (sh *strictHandler) ListAvailable(w http.ResponseWriter, r *http.Request) {
+	var request ListAvailableRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAvailable(ctx, request.(ListAvailableRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAvailable")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAvailableResponseObject); ok {
+		if err := validResponse.VisitListAvailableResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

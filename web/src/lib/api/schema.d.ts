@@ -68,6 +68,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vehicles/available": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Where each vehicle's next trip must start and the earliest start POST /trips accepts, computed with the same rules as trip creation (worst-case reserved time). */
+        get: operations["listAvailable"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/trips": {
         parameters: {
             query?: never;
@@ -160,6 +177,20 @@ export interface components {
              * @description Depot where the vehicle is currently parked; changes when a trip completes.
              */
             depotId: number;
+        };
+        Availability: {
+            /** Format: int64 */
+            vehicleId: number;
+            /**
+             * Format: int64
+             * @description Depot where the vehicle will be after its planned trips; a new trip's route must leave it.
+             */
+            depotId: number;
+            /**
+             * Format: date-time
+             * @description Earliest start for a new trip: now, or when the vehicle's last planned trip can be done. The start must also be strictly after the request time.
+             */
+            availableAt: string;
         };
         /** @enum {string} */
         TripStatus: "scheduled" | "active" | "completed" | "cancelled";
@@ -292,6 +323,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Vehicle"][];
+                };
+            };
+        };
+    };
+    listAvailable: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description One entry per vehicle */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Availability"][];
                 };
             };
         };

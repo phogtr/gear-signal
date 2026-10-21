@@ -9,6 +9,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+type querier interface {
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+}
+
 type Trip struct {
 	ID             int64      `db:"id"`
 	VehicleID      int64      `db:"vehicle_id"`
@@ -31,6 +35,7 @@ func (e *NotFoundError) Error() string { return fmt.Sprintf("%s %d not found", e
 
 type PlannedTrip struct {
 	ID                 int64      `db:"id"`
+	VehicleID          int64      `db:"vehicle_id"`
 	Status             string     `db:"status"`
 	ScheduledStart     time.Time  `db:"scheduled_start"`
 	StartedAt          *time.Time `db:"started_at"`
@@ -262,16 +267,46 @@ func lockPlan(ctx context.Context, tx pgx.Tx, vehicleID int64) (Plan, error) {
 		return Plan{}, fmt.Errorf("lock vehicle %d: %w", vehicleID, err)
 	}
 
-	rows, _ = tx.Query(ctx, `
-		SELECT t.id, t.status, t.scheduled_start, t.started_at, t.eta,
-			r.origin_depot_id, r.destination_depot_id, r.duration_s
-		FROM trips t JOIN routes r ON r.id = t.route_id
-		WHERE t.vehicle_id = $1 AND t.status IN ('scheduled', 'active')
-		ORDER BY COALESCE(t.started_at, t.scheduled_start)`, vehicleID)
-	trips, err := pgx.CollectRows(rows, pgx.RowToStructByName[PlannedTrip])
-
+	trips, err := listPlanned(ctx, tx, &vehicleID)
 	if err != nil {
-		return Plan{}, fmt.Errorf("load trips of vehicle %d: %w", vehicleID, err)
+		return Plan{}, err
 	}
 	return Plan{Vehicle: v, Trips: trips}, nil
+}
+
+func (s *Store) ListPlans(ctx context.Context) ([]Plan, error) {
+	vehicles, err := s.ListVehicles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	trips, err := listPlanned(ctx, s.pool, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	byVehicle := map[int64][]PlannedTrip{}
+	for _, t := range trips {
+		byVehicle[t.VehicleID] = append(byVehicle[t.VehicleID], t)
+	}
+	plans := make([]Plan, len(vehicles))
+	for i, v := range vehicles {
+		plans[i] = Plan{Vehicle: v, Trips: byVehicle[v.ID]}
+	}
+	return plans, nil
+}
+
+// scheduled & active trips in start order; nil vehicleID returns all
+func listPlanned(ctx context.Context, q querier, vehicleID *int64) ([]PlannedTrip, error) {
+	rows, _ := q.Query(ctx, `
+		SELECT t.id, t.vehicle_id, t.status, t.scheduled_start, t.started_at, t.eta,
+			r.origin_depot_id, r.destination_depot_id, r.duration_s
+		FROM trips t JOIN routes r ON r.id = t.route_id
+		WHERE ($1::bigint IS NULL OR t.vehicle_id = $1) AND t.status IN ('scheduled', 'active')
+		ORDER BY COALESCE(t.started_at, t.scheduled_start)`, vehicleID)
+
+	trips, err := pgx.CollectRows(rows, pgx.RowToStructByName[PlannedTrip])
+	if err != nil {
+		return nil, fmt.Errorf("load planned trips: %w", err)
+	}
+	return trips, nil
 }

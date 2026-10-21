@@ -55,6 +55,21 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/Vehicle" }
 
+  /vehicles/available:
+    get:
+      operationId: listAvailable
+      description: >
+        Where each vehicle's next trip must start and the earliest start POST /trips accepts,
+        computed with the same rules as trip creation (worst-case reserved time).
+      responses:
+        "200":
+          description: One entry per vehicle
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Availability" }
+
   /trips:
     get:
       operationId: listTrips
@@ -221,6 +236,22 @@ components:
           description: Depot where the vehicle is currently parked; changes when a trip completes.
           type: integer
           format: int64
+
+    Availability:
+      type: object
+      required: [vehicleId, depotId, availableAt]
+      properties:
+        vehicleId: { type: integer, format: int64 }
+        depotId:
+          description: Depot where the vehicle will be after its planned trips; a new trip's route must leave it.
+          type: integer
+          format: int64
+        availableAt:
+          description: >
+            Earliest start for a new trip: now, or when the vehicle's last planned trip can be done.
+            The start must also be strictly after the request time.
+          type: string
+          format: date-time
 
     TripStatus:
       type: string

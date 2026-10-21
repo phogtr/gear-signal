@@ -62,21 +62,26 @@ func CheckCreate(p store.Plan, r store.Route, start, now time.Time, simSpeed flo
 		return invalid("scheduled start must be in the future")
 	}
 
-	from := v.DepotID
-	if n := len(p.Trips); n > 0 {
-		from = p.Trips[n-1].DestinationDepotID
-	}
+	from, free := Available(p, now, simSpeed)
 	if r.OriginDepotID != from {
 		return invalid("route %s doesn't leave the depot where %s will be then", r.Name, v.Name)
 	}
-
-	if n := len(p.Trips); n > 0 {
-		if free := FreeAt(p.Trips, now, simSpeed); start.Before(free) {
-			return conflict("%s is reserved for trip %d until %s; pick a later start",
-				v.Name, p.Trips[n-1].ID, clock(free))
-		}
+	if n := len(p.Trips); n > 0 && start.Before(free) {
+		return conflict("%s is reserved for trip %d until %s; pick a later start",
+			v.Name, p.Trips[n-1].ID, clock(free))
 	}
 	return nil
+}
+
+// where vehicle's next trip must start, & its earliest time
+// (now or when its last planned trip)
+func Available(p store.Plan, now time.Time, simSpeed float64) (depotID int64, at time.Time) {
+	depotID, at = p.Vehicle.DepotID, now
+	if n := len(p.Trips); n > 0 {
+		depotID = p.Trips[n-1].DestinationDepotID
+		at = latest(now, FreeAt(p.Trips, now, simSpeed))
+	}
+	return depotID, at
 }
 
 func CheckCancel(p store.Plan, t store.Trip) error {

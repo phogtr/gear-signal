@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"time"
 
 	"github.com/phogtr/gear-signal/internal/api/gen"
+	"github.com/phogtr/gear-signal/internal/schedule"
 )
 
 func (s *Server) ListVehicles(ctx context.Context, _ gen.ListVehiclesRequestObject) (gen.ListVehiclesResponseObject, error) {
@@ -22,6 +24,21 @@ func (s *Server) ListVehicles(ctx context.Context, _ gen.ListVehiclesRequestObje
 			Status:  gen.VehicleStatus(v.Status),
 			DepotId: v.DepotID,
 		}
+	}
+	return resp, nil
+}
+
+func (s *Server) ListAvailable(ctx context.Context, _ gen.ListAvailableRequestObject) (gen.ListAvailableResponseObject, error) {
+	plans, err := s.store.ListPlans(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	resp := make(gen.ListAvailable200JSONResponse, len(plans))
+	for i, p := range plans {
+		depotID, at := schedule.Available(p, now, s.simSpeed)
+		resp[i] = gen.Availability{VehicleId: p.Vehicle.ID, DepotId: depotID, AvailableAt: at.UTC()}
 	}
 	return resp, nil
 }

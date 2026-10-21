@@ -86,6 +86,31 @@ func TestFreeAt(t *testing.T) {
 	}
 }
 
+func TestAvailable(t *testing.T) {
+	overdue := at(15, 55) // an active trip whose ETA passed; the next tick completes it
+	tests := []struct {
+		name      string
+		plan      store.Plan
+		wantDepot int64
+		wantAt    time.Time
+	}{
+		{"parked: its depot, now", plan("idle", 1), 1, now},
+		{"chain: last trip's destination, when it can be done",
+			plan("idle", 1, planned(1, there, at(17, 0))), 2, at(17, 0).Add(1000 * time.Second)},
+		{"never earlier than now", plan("en_route", 1, active(1, there, at(15, 40), &overdue)), 2, now},
+		// e.g. SIM_SPEED raised since it started: started_at + reserve is already past
+		{"never earlier than now without an ETA", plan("en_route", 1, active(1, there, at(15, 0), nil)), 2, now},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			depot, got := Available(tt.plan, now, 1)
+			if depot != tt.wantDepot || !got.Equal(tt.wantAt) {
+				t.Errorf("Available = depot %d at %v, want depot %d at %v", depot, got, tt.wantDepot, tt.wantAt)
+			}
+		})
+	}
+}
+
 func TestCheckCreate(t *testing.T) {
 	// trip 1 runs 17:00 to 17:16:40 and ends at depot 2
 	chained := plan("idle", 1, planned(1, there, at(17, 0)))
