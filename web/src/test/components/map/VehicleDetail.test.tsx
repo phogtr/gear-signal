@@ -75,6 +75,7 @@ describe("VehicleDetail", () => {
       routeId: 8,
       scheduledStart: "2026-10-16T08:50:00Z",
       status: "active",
+      source: "demo",
       eta: "2026-10-16T09:28:00Z",
     };
 

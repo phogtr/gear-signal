@@ -11,17 +11,12 @@ import (
 )
 
 func (s *Server) ListTrips(ctx context.Context, req gen.ListTripsRequestObject) (gen.ListTripsResponseObject, error) {
-	var status *string
-	if req.Params.Status != nil {
-		if !req.Params.Status.Valid() {
-			return gen.ListTrips400JSONResponse{Message: "invalid status: " + string(*req.Params.Status)}, nil
-		}
-
-		v := string(*req.Params.Status)
-		status = &v
+	f, msg := tripFilter(req.Params)
+	if msg != "" {
+		return gen.ListTrips400JSONResponse{Message: msg}, nil
 	}
 
-	trips, err := s.store.ListTrips(ctx, status)
+	trips, err := s.store.ListTrips(ctx, f)
 	if err != nil {
 		return nil, err
 	}
@@ -31,6 +26,30 @@ func (s *Server) ListTrips(ctx context.Context, req gen.ListTripsRequestObject) 
 		resp[i] = toTrip(t)
 	}
 	return resp, nil
+}
+
+func tripFilter(p gen.ListTripsParams) (f store.TripFilter, msg string) {
+	if p.Status != nil {
+		for _, st := range *p.Status {
+			if !st.Valid() {
+				return f, "invalid status: " + string(st)
+			}
+			f.Statuses = append(f.Statuses, string(st))
+		}
+	}
+	if p.Source != nil {
+		if !p.Source.Valid() {
+			return f, "invalid source: " + string(*p.Source)
+		}
+		f.Source = string(*p.Source)
+	}
+	if p.Limit != nil {
+		if *p.Limit < 1 || *p.Limit > 100 {
+			return f, "limit must be between 1 and 100"
+		}
+		f.Limit = *p.Limit
+	}
+	return f, ""
 }
 
 func (s *Server) CreateTrip(ctx context.Context, req gen.CreateTripRequestObject) (gen.CreateTripResponseObject, error) {
@@ -85,6 +104,7 @@ func toTrip(t store.Trip) gen.Trip {
 		Eta:            utcPtr(t.ETA),
 		CompletedAt:    utcPtr(t.CompletedAt),
 		Status:         gen.TripStatus(t.Status),
+		Source:         gen.TripSource(t.Source),
 	}
 }
 

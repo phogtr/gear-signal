@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -22,9 +23,10 @@ type Trip struct {
 	ETA            *time.Time `db:"eta"`
 	CompletedAt    *time.Time `db:"completed_at"`
 	Status         string     `db:"status"`
+	Source         string     `db:"source"`
 }
 
-const tripColumns = `id, vehicle_id, route_id, scheduled_start, started_at, eta, completed_at, status`
+const tripColumns = `id, vehicle_id, route_id, scheduled_start, started_at, eta, completed_at, status, source`
 
 type NotFoundError struct {
 	What string
@@ -50,13 +52,25 @@ type Plan struct {
 	Trips   []PlannedTrip
 }
 
-// nil status returns all trips
-func (s *Store) ListTrips(ctx context.Context, status *string) ([]Trip, error) {
+// zero values mean no filter
+type TripFilter struct {
+	Statuses []string
+	Source   string
+	Limit    int // > 0: only newest N by scheduled start, newest first
+}
+
+// ordered by scheduled start, newest first with limit, else oldest
+func (s *Store) ListTrips(ctx context.Context, f TripFilter) ([]Trip, error) {
+	order := "scheduled_start"
+	if f.Limit > 0 {
+		order = "scheduled_start DESC LIMIT " + strconv.Itoa(f.Limit)
+	}
 	rows, err := s.pool.Query(ctx, `
-	SELECT `+tripColumns+`
+		SELECT `+tripColumns+`
 		FROM trips
-		WHERE $1::text IS NULL OR status = $1
-		ORDER BY scheduled_start`, status)
+		WHERE (coalesce(cardinality($1::text[]), 0) = 0 OR status = ANY($1)) -- a nil slice arrives as NULL
+			AND ($2 = '' OR source = $2)
+		ORDER BY `+order, f.Statuses, f.Source)
 
 	if err != nil {
 		return nil, fmt.Errorf("query trips: %w", err)
@@ -105,8 +119,8 @@ func (s *Store) StartTrip(ctx context.Context, vehicleID, routeID int64, started
 					AND NOT EXISTS (SELECT 1 FROM trips t WHERE t.vehicle_id = v.id AND t.status = 'scheduled')
 				RETURNING v.id
 			)
-			INSERT INTO trips (vehicle_id, route_id, scheduled_start, started_at, status)
-			SELECT v.id, $2, $3, $3, 'active' FROM v
+			INSERT INTO trips (vehicle_id, route_id, scheduled_start, started_at, status, source)
+			SELECT v.id, $2, $3, $3, 'active', 'demo' FROM v
 			RETURNING id
 		`, vehicleID, routeID, startedAt).Scan(&id)
 	})
@@ -197,8 +211,8 @@ func (s *Store) CreateTrip(ctx context.Context, vehicleID, routeID int64, start 
 		}
 
 		rows, _ := tx.Query(ctx, `
-			INSERT INTO trips (vehicle_id, route_id, scheduled_start)
-			VALUES ($1, $2, $3)
+			INSERT INTO trips (vehicle_id, route_id, scheduled_start, source)
+			VALUES ($1, $2, $3, 'planned')
 			RETURNING `+tripColumns, vehicleID, routeID, start)
 		trip, err = pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Trip])
 

@@ -31,6 +31,24 @@ func (e TripPatchStatus) Valid() bool {
 	}
 }
 
+// Defines values for TripSource.
+const (
+	TripSourceDemo    TripSource = "demo"
+	TripSourcePlanned TripSource = "planned"
+)
+
+// Valid indicates whether the value is a known member of the TripSource enum.
+func (e TripSource) Valid() bool {
+	switch e {
+	case TripSourceDemo:
+		return true
+	case TripSourcePlanned:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TripStatus.
 const (
 	TripStatusActive    TripStatus = "active"
@@ -160,9 +178,12 @@ type Trip struct {
 	Id             int64      `json:"id"`
 	RouteId        int64      `json:"routeId"`
 	ScheduledStart time.Time  `json:"scheduledStart"`
-	StartedAt      *time.Time `json:"startedAt,omitempty"`
-	Status         TripStatus `json:"status"`
-	VehicleId      int64      `json:"vehicleId"`
+
+	// Source Who created the trip; demo trips come from the simulator's director.
+	Source    TripSource `json:"source"`
+	StartedAt *time.Time `json:"startedAt,omitempty"`
+	Status    TripStatus `json:"status"`
+	VehicleId int64      `json:"vehicleId"`
 }
 
 // TripPatch defines model for TripPatch.
@@ -173,6 +194,9 @@ type TripPatch struct {
 
 // TripPatchStatus The only supported change is scheduled -> cancelled.
 type TripPatchStatus string
+
+// TripSource Who created the trip; demo trips come from the simulator's director.
+type TripSource string
 
 // TripStatus defines model for TripStatus.
 type TripStatus string
@@ -200,7 +224,12 @@ type VehicleType string
 
 // ListTripsParams defines parameters for ListTrips.
 type ListTripsParams struct {
-	Status *TripStatus `form:"status,omitempty" json:"status,omitempty"`
+	// Status Repeat to match any of several, e.g. ?status=completed&status=cancelled
+	Status *[]TripStatus `form:"status,omitempty" json:"status,omitempty"`
+	Source *TripSource   `form:"source,omitempty" json:"source,omitempty"`
+
+	// Limit Only the newest N trips by scheduled start, returned newest first.
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // CreateTripJSONRequestBody defines body for CreateTrip for application/json ContentType.
@@ -343,13 +372,39 @@ func (siw *ServerInterfaceWrapper) ListTrips(w http.ResponseWriter, r *http.Requ
 
 	// ------------- Optional query parameter "status" -------------
 
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
 	if err != nil {
 		var requiredError *runtime.RequiredParameterError
 		if errors.As(err, &requiredError) {
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "source" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "source", r.URL.Query(), &params.Source, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "source"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "source", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
 		}
 		return
 	}

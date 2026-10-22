@@ -77,10 +77,25 @@ paths:
         - name: status
           in: query
           required: false
-          schema: { $ref: "#/components/schemas/TripStatus" }
+          description: Repeat to match any of several, e.g. ?status=completed&status=cancelled
+          style: form
+          explode: true
+          schema:
+            type: array
+            items: { $ref: "#/components/schemas/TripStatus" }
+        - name: source
+          in: query
+          required: false
+          schema: { $ref: "#/components/schemas/TripSource" }
+        - name: limit
+          in: query
+          required: false
+          description: Only the newest N trips by scheduled start, returned newest first.
+          schema: { type: integer, minimum: 1, maximum: 100 }
       responses:
         "200":
-          description: Trips ordered by scheduled start, optionally filtered by status
+          description: >
+            Matching trips ordered by scheduled start: oldest first, or newest first with limit
           content:
             application/json:
               schema:
@@ -257,9 +272,14 @@ components:
       type: string
       enum: [scheduled, active, completed, cancelled]
 
+    TripSource:
+      description: Who created the trip; demo trips come from the simulator's director.
+      type: string
+      enum: [demo, planned]
+
     Trip:
       type: object
-      required: [id, vehicleId, routeId, scheduledStart, status]
+      required: [id, vehicleId, routeId, scheduledStart, status, source]
       properties:
         id: { type: integer, format: int64 }
         vehicleId: { type: integer, format: int64 }
@@ -269,6 +289,7 @@ components:
         eta: { type: string, format: date-time }
         completedAt: { type: string, format: date-time }
         status: { $ref: "#/components/schemas/TripStatus" }
+        source: { $ref: "#/components/schemas/TripSource" }
 
     NewTrip:
       type: object

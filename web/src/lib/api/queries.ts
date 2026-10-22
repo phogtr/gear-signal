@@ -42,7 +42,7 @@ export const useActiveTrips = () => {
     queryKey: ["trips", "active"],
     queryFn: async () => {
       const { data, response } = await api.GET("/trips", {
-        params: { query: { status: "active" } },
+        params: { query: { status: ["active"] } },
       });
       return isOk(data, response, "GET /trips?status=active");
     },

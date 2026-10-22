@@ -194,6 +194,11 @@ export interface components {
         };
         /** @enum {string} */
         TripStatus: "scheduled" | "active" | "completed" | "cancelled";
+        /**
+         * @description Who created the trip; demo trips come from the simulator's director.
+         * @enum {string}
+         */
+        TripSource: "demo" | "planned";
         Trip: {
             /** Format: int64 */
             id: number;
@@ -210,6 +215,7 @@ export interface components {
             /** Format: date-time */
             completedAt?: string;
             status: components["schemas"]["TripStatus"];
+            source: components["schemas"]["TripSource"];
         };
         NewTrip: {
             /** Format: int64 */
@@ -350,7 +356,11 @@ export interface operations {
     listTrips: {
         parameters: {
             query?: {
-                status?: components["schemas"]["TripStatus"];
+                /** @description Repeat to match any of several, e.g. ?status=completed&status=cancelled */
+                status?: components["schemas"]["TripStatus"][];
+                source?: components["schemas"]["TripSource"];
+                /** @description Only the newest N trips by scheduled start, returned newest first. */
+                limit?: number;
             };
             header?: never;
             path?: never;
@@ -358,7 +368,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Trips ordered by scheduled start, optionally filtered by status */
+            /** @description Matching trips ordered by scheduled start: oldest first, or newest first with limit */
             200: {
                 headers: {
                     [name: string]: unknown;

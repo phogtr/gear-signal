@@ -14,7 +14,7 @@ import (
 
 type Store interface {
 	ListRoutes(ctx context.Context) ([]store.Route, error)
-	ListTrips(ctx context.Context, status *string) ([]store.Trip, error)
+	ListTrips(ctx context.Context, f store.TripFilter) ([]store.Trip, error)
 	ListVehicles(ctx context.Context) ([]store.Vehicle, error)
 	StartTrip(ctx context.Context, vehicleID, routeID int64, startedAt time.Time) (int64, error)
 	ListScheduledReadyTrips(ctx context.Context, now time.Time) ([]store.Trip, error)
@@ -66,8 +66,7 @@ func New(ctx context.Context, st Store, writer Sender, multiplier float64, demoT
 		return nil, err
 	}
 
-	active := "active"
-	trips, err := st.ListTrips(ctx, &active)
+	trips, err := st.ListTrips(ctx, store.TripFilter{Statuses: []string{"active"}})
 	if err != nil {
 		return nil, err
 	}
@@ -168,8 +167,7 @@ func (e *Engine) direct(ctx context.Context, now time.Time) {
 		return
 	}
 
-	status := "scheduled"
-	scheduled, err := e.store.ListTrips(ctx, &status)
+	scheduled, err := e.store.ListTrips(ctx, store.TripFilter{Statuses: []string{"scheduled"}})
 	if err != nil {
 		slog.Error("director: list scheduled trips", "err", err)
 		return

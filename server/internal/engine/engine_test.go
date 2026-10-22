@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 
@@ -22,10 +23,11 @@ type fakeStore struct {
 
 func (f *fakeStore) ListRoutes(context.Context) ([]store.Route, error) { return f.routes, nil }
 
-func (f *fakeStore) ListTrips(_ context.Context, status *string) ([]store.Trip, error) {
+// filters by status only; the engine uses nothing else
+func (f *fakeStore) ListTrips(_ context.Context, filter store.TripFilter) ([]store.Trip, error) {
 	var out []store.Trip
 	for _, t := range f.trips {
-		if status == nil || t.Status == *status {
+		if len(filter.Statuses) == 0 || slices.Contains(filter.Statuses, t.Status) {
 			out = append(out, t)
 		}
 	}
