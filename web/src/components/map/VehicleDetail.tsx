@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import { StatusIcon } from "./StatusIcon";
 
 import { useSocketStore } from "../../lib/ws/socket";
-import { formatCountdown, routeLabel } from "../../lib/format";
+import { useNow } from "../../lib/useNow";
+import { formatClock, formatCountdown, routeLabel } from "../../lib/format";
 import { VEHICLE_STATUSES, VEHICLE_TYPE_LABELS } from "../../constants/map";
 
 import type { Depot, Route, Trip, Vehicle } from "../../lib/api/client";
@@ -15,11 +16,6 @@ interface Props {
   trip?: Trip;
   onClose: () => void;
 }
-
-const timeFormat = new Intl.DateTimeFormat([], {
-  hour: "2-digit",
-  minute: "2-digit",
-});
 
 export const VehicleDetail = ({
   vehicle,
@@ -33,13 +29,7 @@ export const VehicleDetail = ({
     s.vehicles.find((v) => v.vehicleId === vehicle.id),
   );
 
-  // a clock for "in N min" / "in N s"; reading Date.now() during render would be impure
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
+  const now = useNow();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -66,7 +56,7 @@ export const VehicleDetail = ({
     );
     if (eta) {
       const left = formatCountdown(eta.getTime() - now);
-      rows.push(["ETA", `${timeFormat.format(eta)} (in ${left})`]);
+      rows.push(["ETA", `${formatClock(eta)} (in ${left})`]);
     }
   } else if (vehicle.status !== "en_route") {
     rows.push(["Depot", depotName(vehicle.depotId) ?? "—"]);

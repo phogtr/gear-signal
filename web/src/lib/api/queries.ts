@@ -1,8 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
-import { api, type Route } from "./client";
+import { api, type Route, type TripSource } from "./client";
 
-// Depots and routes only change when the database is re-seeded, so they never go stale.
+export const RECENT_TRIPS_LIMIT = 20;
+
+// depots & routes only change when database re-seeded, so they never go stale
 export const useDepots = () => {
   return useQuery({
     queryKey: ["depots"],
@@ -46,6 +48,38 @@ export const useActiveTrips = () => {
       });
       return isOk(data, response, "GET /trips?status=active");
     },
+  });
+};
+
+export const useUpcomingTrips = () => {
+  return useQuery({
+    queryKey: ["trips", "scheduled"],
+    queryFn: async () => {
+      const { data, response } = await api.GET("/trips", {
+        params: { query: { status: ["scheduled"] } },
+      });
+      return isOk(data, response, "GET /trips?status=scheduled");
+    },
+  });
+};
+
+export const useRecentTrips = (source?: TripSource) => {
+  return useQuery({
+    queryKey: ["trips", "recent", source ?? "all"],
+    queryFn: async () => {
+      const { data, response } = await api.GET("/trips", {
+        params: {
+          query: {
+            status: ["completed", "cancelled"],
+            source,
+            limit: RECENT_TRIPS_LIMIT,
+          },
+        },
+      });
+      return isOk(data, response, "GET /trips (recent)");
+    },
+    // keep old rows while switching filters instead of flashing empty table
+    placeholderData: keepPreviousData,
   });
 };
 

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { Depot, Route } from "../../lib/api/client";
-import { formatCountdown, routeLabel } from "../../lib/format";
+import {
+  formatClock,
+  formatCountdown,
+  formatWhen,
+  routeLabel,
+} from "../../lib/format";
 
 describe("routeLabel", () => {
   const depots: Depot[] = [
@@ -43,5 +48,29 @@ describe("formatCountdown", () => {
 
   it("never goes negative once the ETA has passed", () => {
     expect(formatCountdown(-5_000)).toBe("0 s");
+  });
+
+  it("switches to hours from one hour", () => {
+    expect(formatCountdown(59 * 60_000)).toBe("59 min");
+    expect(formatCountdown(60 * 60_000)).toBe("1 h");
+    expect(formatCountdown(80 * 60_000)).toBe("1 h 20 min");
+    expect(formatCountdown(26 * 3_600_000)).toBe("26 h");
+  });
+});
+
+describe("formatWhen", () => {
+  const now = new Date(2026, 9, 21, 15, 0).getTime(); // local time, like the browser
+
+  it("shows only the clock for today", () => {
+    const later = new Date(2026, 9, 21, 23, 30);
+    expect(formatWhen(later, now)).toBe(formatClock(later));
+  });
+
+  it("adds the date for another day", () => {
+    const yesterday = new Date(2026, 9, 20, 23, 30);
+    const day = new Intl.DateTimeFormat([], { month: "short", day: "numeric" });
+    expect(formatWhen(yesterday, now)).toBe(
+      `${day.format(yesterday)}, ${formatClock(yesterday)}`,
+    );
   });
 });

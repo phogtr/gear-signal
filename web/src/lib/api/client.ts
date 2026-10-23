@@ -9,3 +9,4 @@ export type Depot = Schemas["Depot"];
 export type Route = Schemas["Route"];
 export type Vehicle = Schemas["Vehicle"];
 export type Trip = Schemas["Trip"];
+export type TripSource = Schemas["TripSource"];
