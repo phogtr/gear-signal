@@ -40,9 +40,12 @@ describe("formatCountdown", () => {
     expect(formatCountdown(59_400)).toBe("1 min");
   });
 
-  it("switches to whole minutes from one minute", () => {
+  it("switches to whole minutes from one minute, rounding up", () => {
     expect(formatCountdown(60_000)).toBe("1 min");
-    expect(formatCountdown(89_000)).toBe("1 min");
+    expect(formatCountdown(61_000)).toBe("2 min");
+    expect(formatCountdown(90_000)).toBe("2 min");
+    expect(formatCountdown(120_000)).toBe("2 min");
+    expect(formatCountdown(149_000)).toBe("3 min");
     expect(formatCountdown(28 * 60_000)).toBe("28 min");
   });
 
@@ -52,6 +55,7 @@ describe("formatCountdown", () => {
 
   it("switches to hours from one hour", () => {
     expect(formatCountdown(59 * 60_000)).toBe("59 min");
+    expect(formatCountdown(59 * 60_000 + 1_000)).toBe("1 h");
     expect(formatCountdown(60 * 60_000)).toBe("1 h");
     expect(formatCountdown(80 * 60_000)).toBe("1 h 20 min");
     expect(formatCountdown(26 * 3_600_000)).toBe("26 h");

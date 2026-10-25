@@ -35,7 +35,7 @@ export const formatCountdown = (ms: number): string => {
   const seconds = Math.max(Math.ceil(ms / 1000), 0);
   if (seconds < 60) return `${seconds} s`;
 
-  const minutes = Math.round(seconds / 60);
+  const minutes = Math.ceil(seconds / 60);
   if (minutes < 60) return `${minutes} min`;
 
   const rest = minutes % 60;
