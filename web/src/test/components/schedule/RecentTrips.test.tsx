@@ -53,7 +53,7 @@ describe("RecentTrips", () => {
 
   it("has an empty state per filter", () => {
     const { rerender } = render(<RecentTrips trips={[]} labels={labels} />);
-    expect(screen.getByText("No finished trips yet.")).toBeInTheDocument();
+    expect(screen.getByText("No finished trips yet")).toBeInTheDocument();
     rerender(<RecentTrips trips={[]} source="planned" labels={labels} />);
     expect(
       screen.getByText(/No planned trips have finished/),

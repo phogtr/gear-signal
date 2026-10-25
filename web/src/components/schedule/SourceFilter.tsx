@@ -23,7 +23,7 @@ export const SourceFilter = ({ value, onChange }: Props) => {
           type="button"
           aria-pressed={value === o.value}
           onClick={() => onChange(o.value)}
-          className={`px-3 py-1 rounded-full border text-xs transition-colors focus-visible:outline-2 focus-visible:outline-primary ${
+          className={`px-3 py-1 rounded-full border text-xs transition-colors ${
             value === o.value
               ? "bg-secondary text-secondary-foreground shadow-xs"
               : "border-border text-muted-foreground hover:bg-accent hover:text-accent-foreground"

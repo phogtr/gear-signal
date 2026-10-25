@@ -99,7 +99,7 @@ describe("ActiveTrips", () => {
       />,
     );
     expect(
-      screen.getByText("None of the planned trips are on the road."),
+      screen.getByText("None of the planned trips are on the road"),
     ).toBeInTheDocument();
   });
 });

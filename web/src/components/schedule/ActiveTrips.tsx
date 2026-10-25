@@ -86,8 +86,8 @@ export const ActiveTrips = ({ trips, source, labels }: Props) => {
         rowKey={(t) => t.id}
         empty={
           source === "planned"
-            ? "None of the planned trips are on the road."
-            : "No vehicles on the road."
+            ? "None of the planned trips are on the road"
+            : "No vehicles on the road"
         }
       />
     </TripSection>

@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import type { Depot, Route, Trip, Vehicle } from "../../lib/api/client";
-import { byStartedAt, departureText, tripLabels } from "../../lib/schedule";
+import {
+  byStartedAt,
+  ceilToMinute,
+  defaultStart,
+  departureText,
+  earliestStart,
+  toLocalInput,
+  tripLabels,
+} from "../../lib/schedule";
 
 const trip = (id: number, fields: Partial<Trip> = {}): Trip => ({
   id,
@@ -83,5 +91,39 @@ describe("byStartedAt", () => {
     const b = trip(2, { scheduledStart: "2026-10-21T16:00:00Z" });
     const c = trip(1, { scheduledStart: "2026-10-21T17:00:00Z" });
     expect([c, a, b].sort(byStartedAt).map((t) => t.id)).toEqual([2, 3, 1]);
+  });
+});
+
+describe("start times for the create form", () => {
+  const now = Date.parse("2026-10-22T16:04:10Z");
+
+  it("rounds up to a whole minute, keeping exact minutes", () => {
+    expect(ceilToMinute(now)).toBe(Date.parse("2026-10-22T16:05:00Z"));
+    expect(ceilToMinute(Date.parse("2026-10-22T16:05:00Z"))).toBe(
+      Date.parse("2026-10-22T16:05:00Z"),
+    );
+  });
+
+  it("starts no earlier than availableAt, rounded up (it has sub-second precision)", () => {
+    const busy = "2026-10-22T16:28:06.5Z";
+    expect(earliestStart(busy, now)).toBe(Date.parse("2026-10-22T16:29:00Z"));
+    expect(defaultStart(busy, now)).toBe(Date.parse("2026-10-22T16:29:00Z"));
+  });
+
+  it("is strictly after now for a free vehicle; the default adds a minute of slack", () => {
+    const free = "2026-10-22T16:04:10Z"; // availableAt = now
+    expect(earliestStart(free, now)).toBe(Date.parse("2026-10-22T16:05:00Z"));
+    expect(defaultStart(free, now)).toBe(Date.parse("2026-10-22T16:06:00Z"));
+
+    const onTheMinute = Date.parse("2026-10-22T16:05:00Z");
+    expect(earliestStart(free, onTheMinute)).toBe(
+      Date.parse("2026-10-22T16:06:00Z"),
+    );
+  });
+
+  it("formats local time for datetime-local and parses back to the same instant", () => {
+    const value = toLocalInput(Date.parse("2026-10-22T16:05:00Z"));
+    expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+    expect(new Date(value).getTime()).toBe(Date.parse("2026-10-22T16:05:00Z"));
   });
 });

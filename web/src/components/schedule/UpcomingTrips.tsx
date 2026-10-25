@@ -53,7 +53,7 @@ export const UpcomingTrips = ({ trips, labels }: Props) => {
         columns={columns}
         rows={trips}
         rowKey={(t) => t.id}
-        empty="No upcoming trips. Scheduled trips show here with a countdown to departure."
+        empty="No upcoming trips. Scheduled trips show here with a countdown to departure"
       />
     </TripSection>
   );

@@ -7,6 +7,8 @@ export interface TripLabels {
   route: (id: number) => string;
 }
 
+const MINUTE = 60_000;
+
 export const tripLabels = (
   vehicles: Vehicle[],
   depots: Depot[],
@@ -34,3 +36,20 @@ export const byStartedAt = (a: Trip, b: Trip): number =>
 
 const startOf = (t: Trip) =>
   new Date(t.startedAt ?? t.scheduledStart).getTime();
+
+export const ceilToMinute = (ms: number): number =>
+  Math.ceil(ms / MINUTE) * MINUTE;
+
+// ceil to a whole minute
+export const earliestStart = (availableAt: string, now: number): number =>
+  ceilToMinute(Math.max(Date.parse(availableAt), now + 1000));
+
+// an extra minute, so start doesn't pass while filling the form
+export const defaultStart = (availableAt: string, now: number): number =>
+  ceilToMinute(Math.max(Date.parse(availableAt), now + MINUTE));
+
+export const toLocalInput = (ms: number): string => {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+const pad = (n: number) => String(n).padStart(2, "0");

@@ -1,6 +1,11 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
-import { api, type Route, type TripSource } from "./client";
+import { api, type NewTrip, type Route, type TripSource } from "./client";
 
 export const RECENT_TRIPS_LIMIT = 20;
 
@@ -80,6 +85,41 @@ export const useRecentTrips = (source?: TripSource) => {
     },
     // keep old rows while switching filters instead of flashing empty table
     placeholderData: keepPreviousData,
+  });
+};
+
+export const useAvailable = (enabled: boolean) => {
+  return useQuery({
+    queryKey: ["available"],
+    queryFn: async () => {
+      const { data, response } = await api.GET("/vehicles/available");
+      return isOk(data, response, "GET /vehicles/available");
+    },
+    enabled,
+    refetchOnMount: "always",
+  });
+};
+
+// rejects with a message
+export const useCreateTrip = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: NewTrip) => {
+      const result = await api
+        .POST("/trips", { body })
+        .catch(() => Promise.reject(new Error("Couldn't reach the server")));
+
+      if (result.data) return result.data;
+
+      throw new Error(
+        result.error?.message ??
+          `Couldn't schedule the trip (HTTP ${result.response.status})`,
+      );
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["trips"] });
+      queryClient.invalidateQueries({ queryKey: ["available"] });
+    },
   });
 };
 

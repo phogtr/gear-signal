@@ -1,10 +1,11 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { ActiveTrips } from "../../../components/schedule/ActiveTrips";
 import { RecentTrips } from "../../../components/schedule/RecentTrips";
 import { SourceFilter } from "../../../components/schedule/SourceFilter";
 import { UpcomingTrips } from "../../../components/schedule/UpcomingTrips";
+import { CreateTripDialog } from "../../../components/schedule/CreateTripDialog";
 
 import {
   useActiveTrips,
@@ -16,8 +17,11 @@ import {
 } from "../../../lib/api/queries";
 import { useSocket } from "../../../lib/ws/useSocket";
 import { tripLabels } from "../../../lib/schedule";
+import { formatWhen } from "../../../lib/format";
 
-import type { TripSource } from "../../../lib/api/client";
+import type { Trip, TripSource } from "../../../lib/api/client";
+
+const CREATED_MSG_MS = 8000;
 
 export const SchedulePage = () => {
   const [params, setParams] = useSearchParams();
@@ -40,6 +44,21 @@ export const SchedulePage = () => {
   // rows wait for names, so they never flash "Vehicle 12"
   const isReady = Boolean(vehicles.data && depots.data && routes.data);
 
+  const [isCreate, setIsCreate] = useState(false);
+  const [createdMsg, setCreatedMsg] = useState("");
+
+  useEffect(() => {
+    if (!createdMsg) return;
+
+    const id = setTimeout(() => setCreatedMsg(""), CREATED_MSG_MS);
+    return () => clearTimeout(id);
+  }, [createdMsg]);
+
+  const onCreated = (t: Trip) =>
+    setCreatedMsg(
+      `Scheduled ${labels.vehicle(t.vehicleId)}, ${labels.route(t.routeId)}, departing ${formatWhen(t.scheduledStart, Date.now())}`,
+    );
+
   const error =
     upcoming.error ??
     active.error ??
@@ -54,14 +73,43 @@ export const SchedulePage = () => {
         <div>
           <h1 className="text-lg font-semibold">Schedule</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Trips planned ahead, on the road, and recently finished.
+            Trips planned ahead, on the road, and recently finished
           </p>
         </div>
-        <SourceFilter
-          value={source}
-          onChange={(s) => setParams(s ? { source: s } : {}, { replace: true })}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <SourceFilter
+            value={source}
+            onChange={(s) =>
+              setParams(s ? { source: s } : {}, { replace: true })
+            }
+          />
+
+          <button
+            type="button"
+            disabled={!isReady}
+            onClick={() => setIsCreate(true)}
+            className="px-3 py-1.5 rounded-md bg-primary text-sm font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:outline-offset-2 disabled:opacity-60"
+          >
+            Schedule trip
+          </button>
+        </div>
       </div>
+
+      <p
+        role="status"
+        className="text-sm text-success font-semibold empty:hidden"
+      >
+        {createdMsg}
+      </p>
+
+      <CreateTripDialog
+        open={isCreate}
+        vehicles={vehicles.data ?? []}
+        depots={depots.data ?? []}
+        routes={routes.data ?? []}
+        onClose={() => setIsCreate(false)}
+        onCreated={onCreated}
+      />
 
       {error && (
         <p

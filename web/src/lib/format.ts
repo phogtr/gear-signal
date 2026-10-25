@@ -16,11 +16,14 @@ const dayFormat = new Intl.DateTimeFormat([], {
 });
 
 // "16:52" in browser's time zone
-export const formatClock = (time: string | Date): string =>
+export const formatClock = (time: string | number | Date): string =>
   clockFormat.format(new Date(time));
 
 // clock alone for today, "Oct 17, 16:52" for any other day
-export const formatWhen = (time: string | Date, now: number): string => {
+export const formatWhen = (
+  time: string | number | Date,
+  now: number,
+): string => {
   const d = new Date(time);
   return d.toDateString() === new Date(now).toDateString()
     ? clockFormat.format(d)

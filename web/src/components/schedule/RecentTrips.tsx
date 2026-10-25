@@ -65,8 +65,8 @@ export const RecentTrips = ({ trips, source, labels }: Props) => {
         rowKey={(t) => t.id}
         empty={
           source === "planned"
-            ? "No planned trips have finished or been cancelled yet."
-            : "No finished trips yet."
+            ? "No planned trips have finished or been cancelled yet"
+            : "No finished trips yet"
         }
       />
     </TripSection>
