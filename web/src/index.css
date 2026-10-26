@@ -85,3 +85,9 @@
     cursor: unset;
   }
 }
+
+@layer components {
+  .secondary-btn {
+    @apply shadow-xs bg-input/30;
+  }
+}

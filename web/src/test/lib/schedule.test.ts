@@ -7,6 +7,7 @@ import {
   defaultStart,
   departureText,
   earliestStart,
+  lastOfChains,
   toLocalInput,
   tripLabels,
 } from "../../lib/schedule";
@@ -125,5 +126,21 @@ describe("start times for the create form", () => {
     const value = toLocalInput(Date.parse("2026-10-22T16:05:00Z"));
     expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
     expect(new Date(value).getTime()).toBe(Date.parse("2026-10-22T16:05:00Z"));
+  });
+});
+
+describe("lastOfChains", () => {
+  it("picks each vehicle's latest scheduled trip", () => {
+    const trips = [
+      trip(1, { vehicleId: 12, scheduledStart: "2026-10-24T16:00:00Z" }),
+      trip(2, { vehicleId: 12, scheduledStart: "2026-10-24T17:00:00Z" }),
+      trip(3, { vehicleId: 18, scheduledStart: "2026-10-24T16:30:00Z" }),
+      trip(4, { vehicleId: 12, scheduledStart: "2026-10-24T16:30:00.5Z" }),
+    ];
+    expect([...lastOfChains(trips)].sort()).toEqual([2, 3]);
+  });
+
+  it("is empty without trips", () => {
+    expect(lastOfChains([]).size).toBe(0);
   });
 });

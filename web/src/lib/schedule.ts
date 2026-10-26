@@ -53,3 +53,17 @@ export const toLocalInput = (ms: number): string => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 const pad = (n: number) => String(n).padStart(2, "0");
+
+export const lastOfChains = (scheduled: Trip[]): Set<number> => {
+  const last = new Map<number, Trip>();
+  for (const t of scheduled) {
+    const prev = last.get(t.vehicleId);
+    if (
+      !prev ||
+      Date.parse(t.scheduledStart) > Date.parse(prev.scheduledStart)
+    ) {
+      last.set(t.vehicleId, t);
+    }
+  }
+  return new Set([...last.values()].map((t) => t.id));
+};

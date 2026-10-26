@@ -5,6 +5,7 @@ export interface Column<T> {
   cell: (row: T) => ReactNode;
   className?: string;
   isHiddenOnPhone?: boolean;
+  isHeaderHidden?: boolean;
 }
 
 interface Props<T> {
@@ -43,7 +44,11 @@ export const TripTable = <T,>({
               scope="col"
               className={`py-2 text-left font-medium text-muted-foreground ${cellClass(c)}`}
             >
-              {c.header}
+              {c.isHeaderHidden ? (
+                <span className="sr-only">{c.header}</span>
+              ) : (
+                c.header
+              )}
             </th>
           ))}
         </tr>

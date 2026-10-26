@@ -123,6 +123,31 @@ export const useCreateTrip = () => {
   });
 };
 
+export const useCancelTrip = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const result = await api
+        .PATCH("/trips/{id}", {
+          params: { path: { id } },
+          body: { status: "cancelled" },
+        })
+        .catch(() => Promise.reject(new Error("Couldn't reach the server")));
+
+      if (result.data) return result.data;
+
+      throw new Error(
+        result.error?.message ??
+          `Couldn't cancel the trip (HTTP ${result.response.status})`,
+      );
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["trips"] });
+      queryClient.invalidateQueries({ queryKey: ["available"] });
+    },
+  });
+};
+
 const isOk = <T>(data: T | undefined, response: Response, label: string): T => {
   if (!response.ok || data === undefined) {
     throw new Error(`${label} failed: HTTP ${response.status}`);

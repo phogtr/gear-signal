@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { ActiveTrips } from "../../../components/schedule/ActiveTrips";
@@ -6,6 +6,7 @@ import { RecentTrips } from "../../../components/schedule/RecentTrips";
 import { SourceFilter } from "../../../components/schedule/SourceFilter";
 import { UpcomingTrips } from "../../../components/schedule/UpcomingTrips";
 import { CreateTripDialog } from "../../../components/schedule/CreateTripDialog";
+import { CancelTripDialog } from "../../../components/schedule/CancelTripDialog";
 
 import {
   useActiveTrips,
@@ -21,7 +22,7 @@ import { formatWhen } from "../../../lib/format";
 
 import type { Trip, TripSource } from "../../../lib/api/client";
 
-const CREATED_MSG_MS = 8000;
+const STATUS_MSG_MS = 8000;
 
 export const SchedulePage = () => {
   const [params, setParams] = useSearchParams();
@@ -45,19 +46,29 @@ export const SchedulePage = () => {
   const isReady = Boolean(vehicles.data && depots.data && routes.data);
 
   const [isCreate, setIsCreate] = useState(false);
-  const [createdMsg, setCreatedMsg] = useState("");
+  const [cancelling, setCancelling] = useState<Trip | null>(null);
+  const [statusMsg, setStatusMsg] = useState("");
+  const upcomingHeading = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
-    if (!createdMsg) return;
+    if (!statusMsg) return;
 
-    const id = setTimeout(() => setCreatedMsg(""), CREATED_MSG_MS);
+    const id = setTimeout(() => setStatusMsg(""), STATUS_MSG_MS);
     return () => clearTimeout(id);
-  }, [createdMsg]);
+  }, [statusMsg]);
 
   const onCreated = (t: Trip) =>
-    setCreatedMsg(
+    setStatusMsg(
       `Scheduled ${labels.vehicle(t.vehicleId)}, ${labels.route(t.routeId)}, departing ${formatWhen(t.scheduledStart, Date.now())}`,
     );
+
+  const onCancelled = (t: Trip) => {
+    setStatusMsg(
+      `Cancelled ${labels.vehicle(t.vehicleId)}, ${labels.route(t.routeId)}, planned for ${formatWhen(t.scheduledStart, Date.now())}`,
+    );
+    // Cancel gone after cancelled, focus on section heading
+    upcomingHeading.current?.focus();
+  };
 
   const error =
     upcoming.error ??
@@ -99,7 +110,7 @@ export const SchedulePage = () => {
         role="status"
         className="text-sm text-success font-semibold empty:hidden"
       >
-        {createdMsg}
+        {statusMsg}
       </p>
 
       <CreateTripDialog
@@ -109,6 +120,13 @@ export const SchedulePage = () => {
         routes={routes.data ?? []}
         onClose={() => setIsCreate(false)}
         onCreated={onCreated}
+      />
+
+      <CancelTripDialog
+        trip={cancelling}
+        labels={labels}
+        onClose={() => setCancelling(null)}
+        onCancelled={onCancelled}
       />
 
       {error && (
@@ -123,6 +141,8 @@ export const SchedulePage = () => {
       <UpcomingTrips
         trips={isReady ? upcoming.data : undefined}
         labels={labels}
+        onCancel={setCancelling}
+        headingRef={upcomingHeading}
       />
       <ActiveTrips
         trips={isReady ? active.data : undefined}

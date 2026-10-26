@@ -271,7 +271,7 @@ export const CreateTripForm = ({
         <button
           type="button"
           onClick={onCancel}
-          className="px-4 py-2 rounded-md border border-border text-sm hover:bg-accent hover:text-accent-foreground"
+          className="px-4 py-2 rounded-md border border-border text-sm secondary-btn hover:bg-accent hover:text-accent-foreground"
         >
           Cancel
         </button>
