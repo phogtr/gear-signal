@@ -2,6 +2,7 @@ package schedule
 
 import (
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -13,10 +14,13 @@ var now = time.Date(2026, 10, 17, 16, 0, 0, 0, time.UTC)
 
 func at(h, m int) time.Time { return time.Date(2026, 10, 17, h, m, 0, 0, time.UTC) }
 
-// depot 1 -> 2 takes 900 s at free flow, so it reserves 1000 s (16 min 40 s) at SIM_SPEED 1
+// depot 1 -> 2 takes 900 s at free flow, so it reserves 1000 s (16 min 40 s)
+// plus the speed wave's ~7.6 s at SIM_SPEED 1
 var (
-	there = store.Route{ID: 10, Name: "a-b", OriginDepotID: 1, DestinationDepotID: 2, DurationS: 900}
-	back  = store.Route{ID: 20, Name: "b-a", OriginDepotID: 2, DestinationDepotID: 1, DurationS: 1800}
+	there        = store.Route{ID: 10, Name: "a-b", OriginDepotID: 1, DestinationDepotID: 2, DurationS: 900}
+	back         = store.Route{ID: 20, Name: "b-a", OriginDepotID: 2, DestinationDepotID: 1, DurationS: 1800}
+	reserveThere = Reserve(there.DurationS, 1)
+	reserveBack  = Reserve(back.DurationS, 1)
 )
 
 func planned(id int64, r store.Route, start time.Time) store.PlannedTrip {
@@ -50,11 +54,21 @@ func kind(err error) error {
 }
 
 func TestReserve(t *testing.T) {
-	if got := Reserve(900, 1); got != 1000*time.Second {
-		t.Errorf("Reserve(900, 1) = %v, want 1000s", got)
+	// the wave lag is 2·0.2 / (2π/120 s) = 24/π ≈ 7.64 s
+	lag := 24 / math.Pi
+	tests := []struct {
+		durationS int
+		simSpeed  float64
+		want      float64 // seconds
+	}{
+		{900, 1, 1000 + lag},
+		{900, 20, (1000 + lag) / 20},
 	}
-	if got := Reserve(900, 20); got != 50*time.Second {
-		t.Errorf("Reserve(900, 20) = %v, want 50s", got)
+	for _, tt := range tests {
+		got := Reserve(tt.durationS, tt.simSpeed)
+		if math.Abs(got.Seconds()-tt.want) > 1e-6 {
+			t.Errorf("Reserve(%d, %g) = %v, want %.6fs", tt.durationS, tt.simSpeed, got, tt.want)
+		}
 	}
 }
 
@@ -68,14 +82,14 @@ func TestFreeAt(t *testing.T) {
 		{"no trips", nil, time.Time{}},
 		{"active trip ends at its ETA", []store.PlannedTrip{active(1, there, at(15, 50), &eta)}, eta},
 		{"active trip without ETA yet takes the worst case",
-			[]store.PlannedTrip{active(1, there, at(15, 50), nil)}, at(15, 50).Add(1000 * time.Second)},
+			[]store.PlannedTrip{active(1, there, at(15, 50), nil)}, at(15, 50).Add(reserveThere)},
 		{"scheduled trip starts on time",
-			[]store.PlannedTrip{planned(1, there, at(17, 0))}, at(17, 0).Add(1000 * time.Second)},
+			[]store.PlannedTrip{planned(1, there, at(17, 0))}, at(17, 0).Add(reserveThere)},
 		{"due trip that hasn't started starts now at the earliest",
-			[]store.PlannedTrip{planned(1, there, at(15, 0))}, now.Add(1000 * time.Second)},
+			[]store.PlannedTrip{planned(1, there, at(15, 0))}, now.Add(reserveThere)},
 		{"trip waits for a late trip before it",
 			[]store.PlannedTrip{active(1, there, at(15, 50), &eta), planned(2, back, at(16, 20))},
-			eta.Add(2000 * time.Second)},
+			eta.Add(reserveBack)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -96,7 +110,7 @@ func TestAvailable(t *testing.T) {
 	}{
 		{"parked: its depot, now", plan("idle", 1), 1, now},
 		{"chain: last trip's destination, when it can be done",
-			plan("idle", 1, planned(1, there, at(17, 0))), 2, at(17, 0).Add(1000 * time.Second)},
+			plan("idle", 1, planned(1, there, at(17, 0))), 2, at(17, 0).Add(reserveThere)},
 		{"never earlier than now", plan("en_route", 1, active(1, there, at(15, 40), &overdue)), 2, now},
 		// e.g. SIM_SPEED raised since it started: started_at + reserve is already past
 		{"never earlier than now without an ETA", plan("en_route", 1, active(1, there, at(15, 0), nil)), 2, now},
@@ -112,7 +126,7 @@ func TestAvailable(t *testing.T) {
 }
 
 func TestCheckCreate(t *testing.T) {
-	// trip 1 runs 17:00 to 17:16:40 and ends at depot 2
+	// trip 1 runs 17:00 to 17:16:48 and ends at depot 2
 	chained := plan("idle", 1, planned(1, there, at(17, 0)))
 
 	tests := []struct {
@@ -127,7 +141,7 @@ func TestCheckCreate(t *testing.T) {
 		{"en route vehicle chains after its active trip",
 			plan("en_route", 1, active(1, there, at(15, 50), new(at(16, 10)))), back, at(16, 10), nil, ""},
 		{"chains from where the last trip ends", chained, back, at(17, 30), nil, ""},
-		{"starts exactly when the last trip can be done", chained, back, at(17, 0).Add(1000 * time.Second), nil, ""},
+		{"starts exactly when the last trip can be done", chained, back, at(17, 0).Add(reserveThere), nil, ""},
 		{"maintenance", plan("maintenance", 1), there, at(17, 0), ErrInvalid, "VAN-07 is in maintenance"},
 		{"start is now", plan("idle", 1), there, now, ErrInvalid, "in the future"},
 		{"start in the past", plan("idle", 1), there, at(15, 0), ErrInvalid, "in the future"},

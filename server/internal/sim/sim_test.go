@@ -42,16 +42,20 @@ func TestTickHalfway(t *testing.T) {
 	s := newSim(t, 1)
 	eta := start(t, s, Trip{ID: 1, VehicleID: 7, RouteID: 1, StartedAt: t0})
 
-	states := s.Tick(t0.Add(eta.Sub(t0) / 2))
+	half := eta.Sub(t0) / 2
+	a := s.trips[1]
+	states := s.Tick(t0.Add(half))
 	if len(states) != 1 {
 		t.Fatalf("got %d states, want 1", len(states))
 	}
 	st := states[0]
 	length := s.routes[1].line.Length()
 
-	near(t, "progress", st.Progress, 0.5, 1e-6)
-	near(t, "distance", st.Distance, length/2, 1e-3)
-	near(t, "lng", st.Lng, 0.005, 1e-8)
+	near(t, "distance", st.Distance, a.distanceAt(half.Seconds()), 1e-9)
+	near(t, "progress", st.Progress, st.Distance/length, 1e-12)
+	near(t, "progress near half", st.Progress, 0.5, a.mean*MaxLagS/length)
+	near(t, "speed", st.Speed, a.speedAt(half.Seconds()), 1e-12)
+	near(t, "lng", st.Lng, 0.01*st.Progress, 1e-8)
 	near(t, "lat", st.Lat, 0, 1e-12)
 	near(t, "heading", st.Degree, 90, 1e-9)
 	if st.Done || st.VehicleID != 7 || st.TripID != 1 || st.RouteID != 1 {
@@ -91,21 +95,54 @@ func TestMultiplierSpeedsUpTime(t *testing.T) {
 
 	near(t, "eta ratio", slowETA.Sub(t0).Seconds()/fastETA.Sub(t0).Seconds(), 10, 1e-6)
 
-	at := t0.Add(5 * time.Second)
-	near(t, "distance ratio", fast.Tick(at)[0].Distance/slow.Tick(at)[0].Distance, 10, 1e-9)
+	// 5 s at 10x is the same sim time as 50 s at 1x
+	f, sl := fast.Tick(t0.Add(5 * time.Second))[0], slow.Tick(t0.Add(50 * time.Second))[0]
+	near(t, "distance", f.Distance, sl.Distance, 1e-6)
+	near(t, "speed", f.Speed, sl.Speed, 1e-9)
 }
 
-func TestETAMatchesSpeed(t *testing.T) {
-	s := newSim(t, 1)
-	eta := start(t, s, Trip{ID: 3, VehicleID: 7, RouteID: 1, StartedAt: t0})
-
-	speed := s.Tick(t0)[0].Speed
-	near(t, "eta seconds", eta.Sub(t0).Seconds(), s.routes[1].line.Length()/speed, 1e-6)
+func TestDistanceIsIntegralOfSpeed(t *testing.T) {
+	for _, phase := range []float64{0, 1, math.Pi, 5} {
+		a := &active{mean: 15, phase: phase}
+		// Simpson's rule over 0..300 sim s (2.5 wave periods)
+		const n, end = 3000, 300.0
+		h := end / n
+		sum := a.speedAt(0) + a.speedAt(end)
+		for i := 1; i < n; i++ {
+			w := 2.0
+			if i%2 == 1 {
+				w = 4
+			}
+			sum += w * a.speedAt(float64(i)*h)
+		}
+		near(t, "integral", a.distanceAt(end), sum*h/3, 1e-6)
+		near(t, "distance at 0", a.distanceAt(0), 0, 1e-12)
+	}
 }
 
-func TestSpeedVariesWithinTenPercentAndSurvivesRestart(t *testing.T) {
+func TestETASolvesRouteLength(t *testing.T) {
+	length := newSim(t, 1).routes[1].line.Length()
+	for id := int64(1); id <= 50; id++ {
+		s := newSim(t, 20)
+		eta := start(t, s, Trip{ID: id, VehicleID: 7, RouteID: 1, StartedAt: t0})
+		a := s.trips[id]
+
+		near(t, "distance at arrival", a.distanceAt(a.travel), length, 1e-6)
+		if lag := a.travel - length/a.mean; math.Abs(lag) > MaxLagS {
+			t.Errorf("trip %d: travel %g s is %g s off the average-speed time, max %g", id, a.travel, lag, MaxLagS)
+		}
+		if st := s.Tick(eta.Add(-time.Millisecond))[0]; st.Done {
+			t.Errorf("trip %d: done before its ETA: %+v", id, st)
+		}
+		if st := s.Tick(eta.Add(time.Millisecond))[0]; !st.Done {
+			t.Errorf("trip %d: not done after its ETA: %+v", id, st)
+		}
+	}
+}
+
+func TestSpeedWavesAroundTripAverageAndSurvivesRestart(t *testing.T) {
 	avg := newSim(t, 1).routes[1].avgSpeed
-	seen := map[float64]bool{}
+	phases := map[float64]bool{}
 
 	for id := int64(1); id <= 50; id++ {
 		trip := Trip{ID: id, VehicleID: id, RouteID: 1, StartedAt: t0}
@@ -113,17 +150,34 @@ func TestSpeedVariesWithinTenPercentAndSurvivesRestart(t *testing.T) {
 		start(t, before, trip)
 		start(t, after, trip)
 
-		v1, v2 := before.Tick(t0)[0].Speed, after.Tick(t0)[0].Speed
-		if v1 != v2 {
-			t.Errorf("trip %d: speed %g before restart, %g after", id, v1, v2)
+		a := before.trips[id]
+		if a.mean != avg*speedFactor(id) {
+			t.Errorf("trip %d: mean %g, want route average × speedFactor", id, a.mean)
 		}
-		if v1 < 0.9*avg || v1 > 1.1*avg {
-			t.Errorf("trip %d: speed %g outside ±10%% of %g", id, v1, avg)
+		phases[a.phase] = true
+		for sec := 0; sec <= 120; sec += 7 {
+			v := a.speedAt(float64(sec))
+			if v < 0.8*a.mean-1e-9 || v > 1.2*a.mean+1e-9 {
+				t.Errorf("trip %d at %d s: speed %g outside ±20%% of %g", id, sec, v, a.mean)
+			}
 		}
-		seen[v1] = true
+
+		at := t0.Add(40 * time.Second)
+		if s1, s2 := before.Tick(at)[0], after.Tick(at)[0]; s1 != s2 {
+			t.Errorf("trip %d: %+v before restart, %+v after", id, s1, s2)
+		}
 	}
-	if len(seen) < 40 {
-		t.Errorf("only %d distinct speeds across 50 trips", len(seen))
+	if len(phases) < 40 {
+		t.Errorf("only %d distinct phases across 50 trips", len(phases))
+	}
+}
+
+// trips that were running before the wave existed keep their average speed
+func TestSpeedFactorUnchanged(t *testing.T) {
+	for id, want := range map[int64]float64{1: 0.94768463817477488, 2: 1.0653956240185063, 42: 0.95067013335597961} {
+		if got := speedFactor(id); got != want {
+			t.Errorf("speedFactor(%d) = %.17g, want %.17g", id, got, want)
+		}
 	}
 }
 
@@ -132,7 +186,7 @@ func TestResumedTripContinuesWhereItWouldBe(t *testing.T) {
 	start(t, s, Trip{ID: 1, VehicleID: 7, RouteID: 1, StartedAt: t0.Add(-30 * time.Second)})
 
 	st := s.Tick(t0)[0]
-	near(t, "distance after 30 s", st.Distance, 30*st.Speed, 1e-9)
+	near(t, "distance after 30 s", st.Distance, s.trips[1].distanceAt(30), 1e-9)
 }
 
 func TestTickSortsByVehicle(t *testing.T) {

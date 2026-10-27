@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/phogtr/gear-signal/internal/sim"
 	"github.com/phogtr/gear-signal/internal/store"
 )
 
@@ -31,8 +32,9 @@ func conflict(format string, a ...any) error {
 	return &Error{Kind: ErrConflict, Msg: fmt.Sprintf(format, a...)}
 }
 
+// worst case: slowest speed factor plus speed wave's lag
 func Reserve(durationS int, simSpeed float64) time.Duration {
-	return time.Duration(float64(durationS) / slowestFactor / simSpeed * float64(time.Second))
+	return time.Duration((float64(durationS)/slowestFactor + sim.MaxLagS) / simSpeed * float64(time.Second))
 }
 
 func FreeAt(trips []store.PlannedTrip, now time.Time, simSpeed float64) time.Time {

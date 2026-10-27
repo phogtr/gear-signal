@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"slices"
 	"time"
@@ -36,6 +37,17 @@ type State struct {
 	Done      bool
 }
 
+// speed swings ±20% around each trip's average, with 2 min period in sim time
+const (
+	waveAmp    = 0.2
+	wavePeriod = 120.0
+	waveOmega  = 2 * math.Pi / wavePeriod
+)
+
+// with wave, vehicle can run ahead/behind compare to constant speed.
+// MaxLagS is the most sim seconds the speed wave can delay a trip's arrival. It's a bound
+const MaxLagS = 2 * waveAmp / waveOmega
+
 type route struct {
 	line     *geo.Polyline
 	avgSpeed float64 // m/s
@@ -43,8 +55,10 @@ type route struct {
 
 type active struct {
 	Trip
-	route *route
-	speed float64 // m/s
+	route  *route
+	mean   float64 // m/s
+	phase  float64 // radians
+	travel float64 // sim seconds from start to arrival
 }
 
 // Sim is not safe for concurrent use; one goroutine owns it
@@ -74,7 +88,7 @@ func New(routes []Route, multiplier float64) (*Sim, error) {
 	return s, nil
 }
 
-// adds a trip and returns its ETA. A StartedAt in the past resumes the trip
+// add a trip & returns its ETA. StartedAt in the past resume the trip
 // where it would be now, which is how active trips survive a server restart
 func (s *Sim) Start(t Trip) (time.Time, error) {
 	r, ok := s.routes[t.RouteID]
@@ -84,21 +98,25 @@ func (s *Sim) Start(t Trip) (time.Time, error) {
 	if _, ok := s.trips[t.ID]; ok {
 		return time.Time{}, errors.New("trip already started")
 	}
-	a := &active{Trip: t, route: r, speed: r.avgSpeed * speedFactor(t.ID)}
+	a := &active{Trip: t, route: r, mean: r.avgSpeed * speedFactor(t.ID), phase: wavePhase(t.ID)}
+	a.travel = a.travelTime(r.line.Length())
 	s.trips[t.ID] = a
 
-	travel := r.line.Length() / (a.speed * s.multiplier)
-	return t.StartedAt.Add(time.Duration(travel * float64(time.Second))), nil
+	return t.StartedAt.Add(time.Duration(a.travel / s.multiplier * float64(time.Second))), nil
 }
 
-// returns every active vehicle's state at now, sorted by vehicle ID.
+// return every active vehicle's state at now, sorted by vehicle ID.
 // Finished trips set Done to true, then removed from active-trip map
 func (s *Sim) Tick(now time.Time) []State {
 	states := make([]State, 0, len(s.trips))
 	for id, a := range s.trips {
 		length := a.route.line.Length()
-		elapsed := now.Sub(a.StartedAt).Seconds() * s.multiplier
-		d := min(max(elapsed*a.speed, 0), length)
+		t := max(now.Sub(a.StartedAt).Seconds()*s.multiplier, 0)
+		done := t >= a.travel
+		d := length
+		if !done {
+			d = min(a.distanceAt(t), length)
+		}
 
 		p, degree := a.route.line.PointAt(d)
 		st := State{
@@ -106,12 +124,12 @@ func (s *Sim) Tick(now time.Time) []State {
 			TripID:    a.ID,
 			RouteID:   a.RouteID,
 			Distance:  d,
-			Speed:     a.speed,
+			Speed:     a.speedAt(t),
 			Lat:       p.Lat(),
 			Lng:       p.Lng(),
 			Degree:    degree,
 			Progress:  d / length,
-			Done:      d >= length,
+			Done:      done,
 		}
 		if st.Done {
 			st.Speed = 0
@@ -123,8 +141,37 @@ func (s *Sim) Tick(now time.Time) []State {
 	return states
 }
 
-// varies each trip's speed by ±10% of the route average. Seeding by
-// trip ID keeps it the same after a restart, so a resumed vehicle doesn't jump
+// v(t) = mean·(1 + a·sin(ωt + φ)), t in sim seconds
+func (a *active) speedAt(t float64) float64 {
+	return a.mean * (1 + waveAmp*math.Sin(waveOmega*t+a.phase))
+}
+
+// integral of speedAt from 0 to t
+func (a *active) distanceAt(t float64) float64 {
+	return a.mean*t + a.mean*waveAmp/waveOmega*(math.Cos(a.phase)-math.Cos(waveOmega*t+a.phase))
+}
+
+// t where distanceAt(t) = length by bisection. t is within MaxLagS bound of d/v.
+// Find first t where d(t) >= length
+func (a *active) travelTime(length float64) float64 {
+	lo, hi := max(length/a.mean-MaxLagS, 0), length/a.mean+MaxLagS
+	for range 50 {
+		mid := (lo + hi) / 2
+		if a.distanceAt(mid) < length {
+			lo = mid // lo is largest value that less than length
+		} else {
+			hi = mid // hi is smallest value that greater/equal to length
+		}
+	}
+	return hi
+}
+
+// varies each trip's speed by ±10% of the route average.
+// Seeding by trip ID keeps it the same after a restart
 func speedFactor(tripID int64) float64 {
 	return 0.9 + 0.2*rand.New(rand.NewPCG(uint64(tripID), 0)).Float64()
+}
+
+func wavePhase(tripID int64) float64 {
+	return 2 * math.Pi * rand.New(rand.NewPCG(uint64(tripID), 1)).Float64()
 }
