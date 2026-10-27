@@ -37,16 +37,18 @@ type State struct {
 	Done      bool
 }
 
-// speed swings ±20% around each trip's average, with 2 min period in sim time
+// speed swings up to ±25% each trip's average, as sum of two waves.
+// At SIM_SPEED 20, repeat every 6 & 29 ticks, together every 174 ticks
 const (
-	waveAmp    = 0.2
-	wavePeriod = 120.0
-	waveOmega  = 2 * math.Pi / wavePeriod
+	wave1Amp   = 0.15
+	wave1Omega = 2 * math.Pi / 120
+	wave2Amp   = 0.1
+	wave2Omega = 2 * math.Pi / 290
 )
 
-// with wave, vehicle can run ahead/behind compare to constant speed.
-// MaxLagS is the most sim seconds the speed wave can delay a trip's arrival. It's a bound
-const MaxLagS = 2 * waveAmp / waveOmega
+// with waves, vehicle can run ahead/behind compare to constant speed.
+// MaxLagS is the most sim seconds the speed waves can delay a trip's arrival. It's a bound
+const MaxLagS = 2*wave1Amp/wave1Omega + 2*wave2Amp/wave2Omega
 
 type route struct {
 	line     *geo.Polyline
@@ -56,9 +58,9 @@ type route struct {
 type active struct {
 	Trip
 	route  *route
-	mean   float64 // m/s
-	phase  float64 // radians
-	travel float64 // sim seconds from start to arrival
+	mean   float64    // m/s
+	phases [2]float64 // radians
+	travel float64    // sim seconds from start to arrival
 }
 
 // Sim is not safe for concurrent use; one goroutine owns it
@@ -98,7 +100,7 @@ func (s *Sim) Start(t Trip) (time.Time, error) {
 	if _, ok := s.trips[t.ID]; ok {
 		return time.Time{}, errors.New("trip already started")
 	}
-	a := &active{Trip: t, route: r, mean: r.avgSpeed * speedFactor(t.ID), phase: wavePhase(t.ID)}
+	a := &active{Trip: t, route: r, mean: r.avgSpeed * speedFactor(t.ID), phases: wavePhases(t.ID)}
 	a.travel = a.travelTime(r.line.Length())
 	s.trips[t.ID] = a
 
@@ -141,14 +143,19 @@ func (s *Sim) Tick(now time.Time) []State {
 	return states
 }
 
-// v(t) = mean·(1 + a·sin(ωt + φ)), t in sim seconds
+// v(t) = mean·(1 + a₁·sin(ω₁t + φ₁) + a₂·sin(ω₂t + φ₂)), t in sim seconds
 func (a *active) speedAt(t float64) float64 {
-	return a.mean * (1 + waveAmp*math.Sin(waveOmega*t+a.phase))
+	return a.mean * (1 + wave1Amp*math.Sin(wave1Omega*t+a.phases[0]) + wave2Amp*math.Sin(wave2Omega*t+a.phases[1]))
 }
 
 // integral of speedAt from 0 to t
 func (a *active) distanceAt(t float64) float64 {
-	return a.mean*t + a.mean*waveAmp/waveOmega*(math.Cos(a.phase)-math.Cos(waveOmega*t+a.phase))
+	return a.mean * (t + waveShift(wave1Amp, wave1Omega, a.phases[0], t) + waveShift(wave2Amp, wave2Omega, a.phases[1], t))
+}
+
+// integral of amp·sin(ωt + φ) from 0 to t
+func waveShift(amp, omega, phase, t float64) float64 {
+	return amp / omega * (math.Cos(phase) - math.Cos(omega*t+phase))
 }
 
 // t where distanceAt(t) = length by bisection. t is within MaxLagS bound of d/v.
@@ -172,6 +179,7 @@ func speedFactor(tripID int64) float64 {
 	return 0.9 + 0.2*rand.New(rand.NewPCG(uint64(tripID), 0)).Float64()
 }
 
-func wavePhase(tripID int64) float64 {
-	return 2 * math.Pi * rand.New(rand.NewPCG(uint64(tripID), 1)).Float64()
+func wavePhases(tripID int64) [2]float64 {
+	rng := rand.New(rand.NewPCG(uint64(tripID), 1))
+	return [2]float64{2 * math.Pi * rng.Float64(), 2 * math.Pi * rng.Float64()}
 }

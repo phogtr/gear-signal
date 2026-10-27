@@ -102,10 +102,10 @@ func TestMultiplierSpeedsUpTime(t *testing.T) {
 }
 
 func TestDistanceIsIntegralOfSpeed(t *testing.T) {
-	for _, phase := range []float64{0, 1, math.Pi, 5} {
-		a := &active{mean: 15, phase: phase}
-		// Simpson's rule over 0..300 sim s (2.5 wave periods)
-		const n, end = 3000, 300.0
+	for _, phases := range [][2]float64{{0, 0}, {1, 4}, {math.Pi, 2}, {5, math.Pi}} {
+		a := &active{mean: 15, phases: phases}
+		// Simpson's rule over 0..600 sim s (5 periods of wave 1, ~2 of wave 2)
+		const n, end = 6000, 600.0
 		h := end / n
 		sum := a.speedAt(0) + a.speedAt(end)
 		for i := 1; i < n; i++ {
@@ -142,7 +142,7 @@ func TestETASolvesRouteLength(t *testing.T) {
 
 func TestSpeedWavesAroundTripAverageAndSurvivesRestart(t *testing.T) {
 	avg := newSim(t, 1).routes[1].avgSpeed
-	phases := map[float64]bool{}
+	phases := map[[2]float64]bool{}
 
 	for id := int64(1); id <= 50; id++ {
 		trip := Trip{ID: id, VehicleID: id, RouteID: 1, StartedAt: t0}
@@ -154,11 +154,11 @@ func TestSpeedWavesAroundTripAverageAndSurvivesRestart(t *testing.T) {
 		if a.mean != avg*speedFactor(id) {
 			t.Errorf("trip %d: mean %g, want route average × speedFactor", id, a.mean)
 		}
-		phases[a.phase] = true
-		for sec := 0; sec <= 120; sec += 7 {
+		phases[a.phases] = true
+		for sec := 0; sec <= 600; sec += 7 {
 			v := a.speedAt(float64(sec))
-			if v < 0.8*a.mean-1e-9 || v > 1.2*a.mean+1e-9 {
-				t.Errorf("trip %d at %d s: speed %g outside ±20%% of %g", id, sec, v, a.mean)
+			if v < 0.75*a.mean-1e-9 || v > 1.25*a.mean+1e-9 {
+				t.Errorf("trip %d at %d s: speed %g outside ±25%% of %g", id, sec, v, a.mean)
 			}
 		}
 
@@ -169,6 +169,17 @@ func TestSpeedWavesAroundTripAverageAndSurvivesRestart(t *testing.T) {
 	}
 	if len(phases) < 40 {
 		t.Errorf("only %d distinct phases across 50 trips", len(phases))
+	}
+}
+
+// 120 s and 290 s only line up again after 3480 s sim (174 ticks at SIM_SPEED 20)
+func TestSpeedPatternRepeatsOnlyAfterBothPeriods(t *testing.T) {
+	a := &active{mean: 15, phases: wavePhases(1)}
+	for _, sec := range []float64{0, 37, 200} {
+		if math.Abs(a.speedAt(sec+120)-a.speedAt(sec)) < 1e-3 {
+			t.Errorf("speed at %g s repeats after 120 s alone", sec)
+		}
+		near(t, "speed after 3480 s", a.speedAt(sec+3480), a.speedAt(sec), 1e-9)
 	}
 }
 

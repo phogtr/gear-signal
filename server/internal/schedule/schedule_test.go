@@ -15,7 +15,7 @@ var now = time.Date(2026, 10, 17, 16, 0, 0, 0, time.UTC)
 func at(h, m int) time.Time { return time.Date(2026, 10, 17, h, m, 0, 0, time.UTC) }
 
 // depot 1 -> 2 takes 900 s at free flow, so it reserves 1000 s (16 min 40 s)
-// plus the speed wave's ~7.6 s at SIM_SPEED 1
+// plus the speed waves' ~15 s at SIM_SPEED 1
 var (
 	there        = store.Route{ID: 10, Name: "a-b", OriginDepotID: 1, DestinationDepotID: 2, DurationS: 900}
 	back         = store.Route{ID: 20, Name: "b-a", OriginDepotID: 2, DestinationDepotID: 1, DurationS: 1800}
@@ -54,8 +54,8 @@ func kind(err error) error {
 }
 
 func TestReserve(t *testing.T) {
-	// the wave lag is 2·0.2 / (2π/120 s) = 24/π ≈ 7.64 s
-	lag := 24 / math.Pi
+	// the wave lag is 2·0.15/(2π/120 s) + 2·0.1/(2π/290 s) = 18/π + 29/π ≈ 14.96 s
+	lag := 47 / math.Pi
 	tests := []struct {
 		durationS int
 		simSpeed  float64
@@ -126,7 +126,7 @@ func TestAvailable(t *testing.T) {
 }
 
 func TestCheckCreate(t *testing.T) {
-	// trip 1 runs 17:00 to 17:16:48 and ends at depot 2
+	// trip 1 runs 17:00 to 17:16:55 and ends at depot 2
 	chained := plan("idle", 1, planned(1, there, at(17, 0)))
 
 	tests := []struct {
