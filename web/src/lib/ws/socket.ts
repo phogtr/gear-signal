@@ -4,14 +4,22 @@ import type { Tick, VehicleState } from "./types";
 
 export type SocketStatus = "connecting" | "live" | "offline";
 
+// vehicle's final state after it's done
+export interface Completed {
+  at: string;
+  state: VehicleState;
+}
+
 interface SocketState {
   status: SocketStatus;
   vehicles: VehicleState[];
+  completed: Record<number, Completed>;
 }
 
 export const useSocketStore = create<SocketState>(() => ({
   status: "connecting",
   vehicles: [],
+  completed: {},
 }));
 
 export const connectSocket = (url: string, onTripsChanged: () => void) => {
@@ -31,12 +39,11 @@ export const connectSocket = (url: string, onTripsChanged: () => void) => {
 
     ws.onmessage = (e: MessageEvent<string>) => {
       const tick = JSON.parse(e.data) as Tick;
-      const { vehicles, isChanged } = applyTick(
-        useSocketStore.getState().vehicles,
-        tick,
-      );
+      const prev = useSocketStore.getState();
+      const { vehicles, isChanged } = applyTick(prev.vehicles, tick);
+      const completed = applyCompleted(prev.completed, tick);
 
-      useSocketStore.setState({ vehicles });
+      useSocketStore.setState({ vehicles, completed });
       if (isChanged) onTripsChanged();
     };
 
@@ -74,6 +81,18 @@ export const applyTick = (
     activeVehicles.some((v) => !prevIds.has(v.vehicleId));
 
   return { vehicles: activeVehicles, isChanged };
+};
+
+export const applyCompleted = (
+  prev: Record<number, Completed>,
+  tick: Tick,
+): Record<number, Completed> => {
+  const done = tick.vehicles.filter((v) => v.done);
+  if (done.length === 0) return prev;
+
+  const next = { ...prev };
+  for (const v of done) next[v.vehicleId] = { at: tick.ts, state: v };
+  return next;
 };
 
 // 1 s, 2 s, 4 s ... capped at 30 s

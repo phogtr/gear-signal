@@ -1,10 +1,82 @@
-import { Placeholder } from "../../../components/Placeholder";
+import { useSearchParams } from "react-router";
+
+import { ActiveVehiclePicker } from "../../../components/console/ActiveVehiclePicker";
+import { TelemetryPanel } from "../../../components/console/TelemetryPanel";
+import { SocketStatus } from "../../../components/map/SocketStatus";
+
+import {
+  useActiveTrips,
+  useDepots,
+  useRoutes,
+  useVehicles,
+} from "../../../lib/api/queries";
+import { useSocket } from "../../../lib/ws/useSocket";
+import { parseVehicleId } from "../../../lib/console";
 
 export const ConsolePage = () => {
+  const [params] = useSearchParams();
+  const selectedId = parseVehicleId(params.get("vehicle"));
+
+  useSocket();
+
+  const vehicles = useVehicles();
+  const depots = useDepots();
+  const routes = useRoutes();
+  const trips = useActiveTrips();
+
+  const error = vehicles.error ?? depots.error ?? routes.error ?? trips.error;
+  // rows wait for names, so they never flash "No vehicles"
+  const isReady = Boolean(vehicles.data && depots.data && routes.data);
+  const selected = vehicles.data?.find((v) => v.id === selectedId);
+
   return (
-    <Placeholder
-      title="Console"
-      description="Live telemetry for an active trip: gauges, rolling charts and an event log"
-    />
+    <div className="flex w-full min-h-0 flex-1 flex-col gap-4 p-4 sm:p-6">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-semibold">Console</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Live telemetry for a vehicle on a trip
+          </p>
+        </div>
+        <SocketStatus />
+      </div>
+
+      {error && (
+        <p
+          role="alert"
+          className="px-3 py-2 rounded-lg border border-border bg-card text-sm font-semibold text-danger"
+        >
+          Couldn't load fleet data
+        </p>
+      )}
+
+      {isReady && (
+        <div className="grid gap-4 md:min-h-0 md:flex-1 md:grid-cols-[16rem_1fr] md:grid-rows-[minmax(0,1fr)] md:items-start">
+          <ActiveVehiclePicker
+            vehicles={vehicles.data!}
+            depots={depots.data!}
+            routes={routes.data!}
+            trips={trips.data ?? []}
+            selectedId={selectedId}
+          />
+
+          {selected ? (
+            <TelemetryPanel
+              key={selected.id}
+              vehicle={selected}
+              depots={depots.data!}
+              routes={routes.data!}
+              trips={trips.data ?? []}
+            />
+          ) : (
+            <p className="p-4 rounded-lg border border-dashed border-border text-sm text-muted-foreground">
+              {selectedId === null
+                ? "Pick an active vehicle to see its live telemetry"
+                : `No vehicle with id ${selectedId}`}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
   );
 };

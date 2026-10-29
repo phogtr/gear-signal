@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { applyTick, backoff } from "../../../lib/ws/socket";
+import { applyCompleted, applyTick, backoff } from "../../../lib/ws/socket";
 import type { Tick, VehicleState } from "../../../lib/ws/types";
 
 const state = (vehicleId: number, done = false): VehicleState => ({
@@ -57,6 +57,24 @@ describe("applyTick", () => {
   it("changes on the first tick after connecting", () => {
     expect(applyTick([], tick(state(1))).isChanged).toBe(true);
     expect(applyTick([], tick()).isChanged).toBe(false);
+  });
+});
+
+describe("applyCompleted", () => {
+  it("keeps the same object while nothing finishes", () => {
+    const prev = {};
+    expect(applyCompleted(prev, tick(state(1), state(2)))).toBe(prev);
+  });
+
+  it("records the final state and time of each finished trip", () => {
+    const old = { 3: { at: "2026-10-13T08:00:00Z", state: state(3, true) } };
+    const next = applyCompleted(old, tick(state(1), state(2, true)));
+
+    expect(next).toEqual({
+      ...old,
+      2: { at: "2026-10-13T09:00:00Z", state: state(2, true) },
+    });
+    expect(old).not.toHaveProperty("2");
   });
 });
 

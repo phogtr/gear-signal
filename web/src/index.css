@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "@fontsource-variable/manrope";
+@import "@fontsource-variable/fira-code";
 
 /*
  * design tokens
@@ -62,7 +63,7 @@
   --shadow-2xl: 0 1px 3px 0px hsl(0 0% 0% / 0.25);
 
   --font-sans: "Manrope Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: Fira Code, ui-monospace, monospace;
+  --font-mono: "Fira Code Variable", ui-monospace, monospace;
 }
 
 @layer base {
