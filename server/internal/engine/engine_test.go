@@ -125,6 +125,10 @@ var route = store.Route{ID: 1, OriginDepotID: 1, DestinationDepotID: 2, Coordina
 
 var routeBack = store.Route{ID: 2, OriginDepotID: 2, DestinationDepotID: 1, Coordinates: [][2]float64{{0.01, 0}, {0, 0}}, DurationS: 100}
 
+func van(id int64, status string, depot int64) store.Vehicle {
+	return store.Vehicle{ID: id, Type: "ev_van", Status: status, DepotID: depot}
+}
+
 func scheduledTrip(id, vehicle, routeID int64, start time.Time) store.Trip {
 	return store.Trip{ID: id, VehicleID: vehicle, RouteID: routeID, Status: "scheduled", ScheduledStart: start}
 }
@@ -135,7 +139,11 @@ func activeTrip(id, vehicle int64, startedAt time.Time) store.Trip {
 
 func TestNewResumesOnlyActiveTrips(t *testing.T) {
 	scheduled := store.Trip{ID: 2, VehicleID: 8, RouteID: 1, Status: "scheduled", ScheduledStart: t0}
-	fs := &fakeStore{routes: []store.Route{route}, trips: []store.Trip{activeTrip(1, 7, t0), scheduled}}
+	fs := &fakeStore{
+		routes:   []store.Route{route},
+		vehicles: []store.Vehicle{van(7, "en_route", 1), van(8, "idle", 1)},
+		trips:    []store.Trip{activeTrip(1, 7, t0), scheduled},
+	}
 
 	e, err := New(context.Background(), fs, nil, 1, 0)
 	if err != nil {
@@ -151,7 +159,7 @@ func TestNewResumesOnlyActiveTrips(t *testing.T) {
 }
 
 func TestStepCompletesFinishedTrips(t *testing.T) {
-	fs := &fakeStore{routes: []store.Route{route}, trips: []store.Trip{activeTrip(1, 7, t0)}}
+	fs := &fakeStore{routes: []store.Route{route}, vehicles: []store.Vehicle{van(7, "en_route", 1)}, trips: []store.Trip{activeTrip(1, 7, t0)}}
 	e, err := New(context.Background(), fs, nil, 1, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -173,6 +181,7 @@ func TestStepCompletesFinishedTrips(t *testing.T) {
 func TestStepKeepsGoingWhenCompleteFails(t *testing.T) {
 	fs := &fakeStore{
 		routes:   []store.Route{route},
+		vehicles: []store.Vehicle{van(7, "en_route", 1), van(8, "en_route", 1)},
 		trips:    []store.Trip{activeTrip(1, 7, t0), activeTrip(2, 8, t0)},
 		failNext: true,
 	}
@@ -196,9 +205,9 @@ func TestNewRejectsActiveTripWithoutStartedAt(t *testing.T) {
 
 func TestDirectStartsOneTripPerPassUpToTarget(t *testing.T) {
 	fs := &fakeStore{routes: []store.Route{route}, vehicles: []store.Vehicle{
-		{ID: 1, Status: "idle", DepotID: 1},
-		{ID: 2, Status: "idle", DepotID: 1},
-		{ID: 3, Status: "idle", DepotID: 1},
+		van(1, "idle", 1),
+		van(2, "idle", 1),
+		van(3, "idle", 1),
 	}}
 	e, err := New(context.Background(), fs, nil, 1, 2)
 	if err != nil {
@@ -225,7 +234,7 @@ func TestDirectStartsOneTripPerPassUpToTarget(t *testing.T) {
 }
 
 func TestDirectOffWhenDemoTripsIsZero(t *testing.T) {
-	fs := &fakeStore{routes: []store.Route{route}, vehicles: []store.Vehicle{{ID: 1, Status: "idle", DepotID: 1}}}
+	fs := &fakeStore{routes: []store.Route{route}, vehicles: []store.Vehicle{van(1, "idle", 1)}}
 	e, err := New(context.Background(), fs, nil, 1, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -237,7 +246,7 @@ func TestDirectOffWhenDemoTripsIsZero(t *testing.T) {
 }
 
 func TestNewRewritesETAForResumedTrips(t *testing.T) {
-	fs := &fakeStore{routes: []store.Route{route}, trips: []store.Trip{activeTrip(1, 7, t0)}}
+	fs := &fakeStore{routes: []store.Route{route}, vehicles: []store.Vehicle{van(7, "en_route", 1)}, trips: []store.Trip{activeTrip(1, 7, t0)}}
 
 	if _, err := New(context.Background(), fs, nil, 1, 0); err != nil {
 		t.Fatal(err)
@@ -261,7 +270,7 @@ func TestNewRewritesETAForResumedTrips(t *testing.T) {
 func TestStartScheduledStartsTripsWhenDue(t *testing.T) {
 	fs := &fakeStore{
 		routes:   []store.Route{route},
-		vehicles: []store.Vehicle{{ID: 7, Status: "idle", DepotID: 1}},
+		vehicles: []store.Vehicle{van(7, "idle", 1)},
 		trips:    []store.Trip{scheduledTrip(1, 7, 1, t0.Add(10*time.Second))},
 	}
 	e, err := New(context.Background(), fs, nil, 1, 0)
@@ -292,7 +301,7 @@ func TestStartScheduledLateStartWaitsForTheVehicle(t *testing.T) {
 	// trip 1 drives depot 1 -> 2 for 100 s; trip 2 (2 -> 1) is due while it is still driving
 	fs := &fakeStore{
 		routes:   []store.Route{route, routeBack},
-		vehicles: []store.Vehicle{{ID: 7, Status: "en_route", DepotID: 1}},
+		vehicles: []store.Vehicle{van(7, "en_route", 1)},
 		trips:    []store.Trip{activeTrip(1, 7, t0), scheduledTrip(2, 7, 2, t0.Add(30*time.Second))},
 	}
 	e, err := New(context.Background(), fs, nil, 1, 0)
@@ -318,7 +327,7 @@ func TestStartScheduledLateStartWaitsForTheVehicle(t *testing.T) {
 func TestStartScheduledStartsChargingVehicle(t *testing.T) {
 	fs := &fakeStore{
 		routes:   []store.Route{route},
-		vehicles: []store.Vehicle{{ID: 7, Status: "charging", DepotID: 1}},
+		vehicles: []store.Vehicle{van(7, "charging", 1)},
 		trips:    []store.Trip{scheduledTrip(1, 7, 1, t0)},
 	}
 	e, err := New(context.Background(), fs, nil, 1, 0)
@@ -328,5 +337,34 @@ func TestStartScheduledStartsChargingVehicle(t *testing.T) {
 	e.startScheduled(context.Background(), t0)
 	if fs.trips[0].Status != "active" {
 		t.Errorf("charging vehicle didn't leave for its scheduled trip: %+v", fs.trips[0])
+	}
+}
+
+func TestVehicleTypeReachesTheSim(t *testing.T) {
+	truck := func(id int64, status string) store.Vehicle {
+		return store.Vehicle{ID: id, Type: "diesel_truck", Status: status, DepotID: 1}
+	}
+	fs := &fakeStore{
+		routes:   []store.Route{route},
+		vehicles: []store.Vehicle{truck(7, "en_route"), van(8, "idle", 1), truck(9, "idle")},
+		trips:    []store.Trip{activeTrip(1, 7, t0), scheduledTrip(2, 9, 1, t0)},
+	}
+	e, err := New(context.Background(), fs, nil, 1, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	e.startScheduled(ctx, t0) // trip 2, vehicle 9
+	e.direct(ctx, t0)         // vehicle 8, the only idle one left
+
+	states := e.step(ctx, t0.Add(10*time.Second))
+	if len(states) != 3 {
+		t.Fatalf("want resumed, scheduled and director trips, got %+v", states)
+	}
+	for _, st := range states {
+		ev := st.VehicleID == 8
+		if (st.Battery != nil) != ev || (st.EngineTemp != nil) == ev {
+			t.Errorf("vehicle %d: battery %v, engine temp %v", st.VehicleID, st.Battery, st.EngineTemp)
+		}
 	}
 }

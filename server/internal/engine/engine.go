@@ -37,6 +37,7 @@ type Engine struct {
 	sim            *sim.Sim
 	demoTrips      int
 	routesByOrigin map[int64][]int64
+	vehicleTypes   map[int64]string
 	rng            *rand.Rand
 }
 
@@ -66,6 +67,12 @@ func New(ctx context.Context, st Store, writer Sender, multiplier float64, demoT
 		return nil, err
 	}
 
+	vehicles, err := st.ListVehicles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	vehicleTypes := typesByID(vehicles)
+
 	trips, err := st.ListTrips(ctx, store.TripFilter{Statuses: []string{"active"}})
 	if err != nil {
 		return nil, err
@@ -74,7 +81,7 @@ func New(ctx context.Context, st Store, writer Sender, multiplier float64, demoT
 		if t.StartedAt == nil {
 			return nil, fmt.Errorf("active trip %d has no started_at", t.ID)
 		}
-		eta, err := s.Start(sim.Trip{ID: t.ID, VehicleID: t.VehicleID, RouteID: t.RouteID, StartedAt: *t.StartedAt})
+		eta, err := s.Start(sim.Trip{ID: t.ID, VehicleID: t.VehicleID, VehicleType: vehicleTypes[t.VehicleID], RouteID: t.RouteID, StartedAt: *t.StartedAt})
 		if err != nil {
 			return nil, err
 		}
@@ -91,6 +98,7 @@ func New(ctx context.Context, st Store, writer Sender, multiplier float64, demoT
 		sim:            s,
 		demoTrips:      demoTrips,
 		routesByOrigin: routesByOrigin,
+		vehicleTypes:   vehicleTypes,
 		rng:            rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0)),
 	}, nil
 }
@@ -152,7 +160,7 @@ func (e *Engine) startScheduled(ctx context.Context, now time.Time) {
 			continue
 		}
 		if started {
-			e.launch(ctx, sim.Trip{ID: t.ID, VehicleID: t.VehicleID, RouteID: t.RouteID, StartedAt: startedAt})
+			e.launch(ctx, sim.Trip{ID: t.ID, VehicleID: t.VehicleID, VehicleType: e.vehicleTypes[t.VehicleID], RouteID: t.RouteID, StartedAt: startedAt})
 		}
 	}
 }
@@ -166,6 +174,8 @@ func (e *Engine) direct(ctx context.Context, now time.Time) {
 		slog.Error("director: list vehicles", "err", err)
 		return
 	}
+
+	e.vehicleTypes = typesByID(vehicles)
 
 	scheduled, err := e.store.ListTrips(ctx, store.TripFilter{Statuses: []string{"scheduled"}})
 	if err != nil {
@@ -189,7 +199,7 @@ func (e *Engine) direct(ctx context.Context, now time.Time) {
 		slog.Error("director", "err", err)
 		return
 	}
-	e.launch(ctx, sim.Trip{ID: tripID, VehicleID: vehicleID, RouteID: routeID, StartedAt: startedAt})
+	e.launch(ctx, sim.Trip{ID: tripID, VehicleID: vehicleID, VehicleType: e.vehicleTypes[vehicleID], RouteID: routeID, StartedAt: startedAt})
 }
 
 // simulate a trip that already active in DB & saves its ETA
@@ -204,4 +214,12 @@ func (e *Engine) launch(ctx context.Context, t sim.Trip) {
 		slog.Error("set eta", "trip", t.ID, "err", err)
 	}
 	slog.Info("started trip", "trip", t.ID, "vehicle", t.VehicleID, "route", t.RouteID, "eta", eta.Local().Format(time.TimeOnly))
+}
+
+func typesByID(vehicles []store.Vehicle) map[int64]string {
+	types := make(map[int64]string, len(vehicles))
+	for _, v := range vehicles {
+		types[v.ID] = v.Type
+	}
+	return types
 }

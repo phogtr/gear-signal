@@ -25,6 +25,10 @@ type VehicleState struct {
 	Degree    float64 `json:"degree"`   // compass heading, 0 = north, clockwise
 	Progress  float64 `json:"progress"` // 0..1
 	Done      bool    `json:"done"`
+
+	Battery    *float64 `json:"battery,omitempty"`    // 0..1, EVs only
+	Fuel       *float64 `json:"fuel,omitempty"`       // 0..1, diesels only
+	EngineTemp *float64 `json:"engineTemp,omitempty"` // °C (not kelvin), diesels only
 }
 
 func NewTick(now time.Time, states []sim.State) Tick {
@@ -41,6 +45,10 @@ func NewTick(now time.Time, states []sim.State) Tick {
 			Degree:    s.Degree,
 			Progress:  s.Progress,
 			Done:      s.Done,
+
+			Battery:    s.Battery,
+			Fuel:       s.Fuel,
+			EngineTemp: s.EngineTemp,
 		}
 	}
 	return Tick{Type: "tick", TS: now.UTC(), Vehicles: vehicles}

@@ -18,11 +18,17 @@ type Route struct {
 	DurationS int
 }
 
+const (
+	EVVan       = "ev_van"
+	DieselTruck = "diesel_truck"
+)
+
 type Trip struct {
-	ID        int64
-	VehicleID int64
-	RouteID   int64
-	StartedAt time.Time
+	ID          int64
+	VehicleID   int64
+	VehicleType string
+	RouteID     int64
+	StartedAt   time.Time
 }
 
 type State struct {
@@ -35,6 +41,10 @@ type State struct {
 	Degree    float64 // 0 = north
 	Progress  float64 // 0..1
 	Done      bool
+
+	Battery    *float64 // 0..1, EVs
+	Fuel       *float64 // 0..1, diesels
+	EngineTemp *float64 // °C, diesels
 }
 
 // speed swings up to ±25% each trip's average, as sum of two waves.
@@ -50,6 +60,16 @@ const (
 // MaxLagS is the most sim seconds the speed waves can delay a trip's arrival. It's a bound
 const MaxLagS = 2*wave1Amp/wave1Omega + 2*wave2Amp/wave2Omega
 
+const (
+	batteryPerM = 0.3 / 75 / 1000   // 0.3 kWh/km on 75 kWh usable: 0.4% per km
+	fuelPerM    = 0.35 / 300 / 1000 // 35 L/100 km on a 300 L tank: ~0.12% per km
+
+	// engine warm from coldTemp to warmTemp
+	coldTemp = 25.0
+	warmTemp = 90.0
+	warmupS  = 180.0
+)
+
 type route struct {
 	line     *geo.Polyline
 	avgSpeed float64 // m/s
@@ -61,6 +81,7 @@ type active struct {
 	mean   float64    // m/s
 	phases [2]float64 // radians
 	travel float64    // sim seconds from start to arrival
+	level  float64    // battery or fuel at the start, 0..1
 }
 
 // Sim is not safe for concurrent use; one goroutine owns it
@@ -100,7 +121,11 @@ func (s *Sim) Start(t Trip) (time.Time, error) {
 	if _, ok := s.trips[t.ID]; ok {
 		return time.Time{}, errors.New("trip already started")
 	}
-	a := &active{Trip: t, route: r, mean: r.avgSpeed * speedFactor(t.ID), phases: wavePhases(t.ID)}
+	if t.VehicleType != EVVan && t.VehicleType != DieselTruck {
+		return time.Time{}, fmt.Errorf("trip %d: unknown vehicle type %q", t.ID, t.VehicleType)
+	}
+
+	a := &active{Trip: t, route: r, mean: r.avgSpeed * speedFactor(t.ID), phases: wavePhases(t.ID), level: startLevel(t.ID)}
 	a.travel = a.travelTime(r.line.Length())
 	s.trips[t.ID] = a
 
@@ -133,6 +158,7 @@ func (s *Sim) Tick(now time.Time) []State {
 			Progress:  d / length,
 			Done:      done,
 		}
+		a.telemetry(&st, min(t, a.travel))
 		if st.Done {
 			st.Speed = 0
 			delete(s.trips, id)
@@ -141,6 +167,17 @@ func (s *Sim) Tick(now time.Time) []State {
 	}
 	slices.SortFunc(states, func(a, b State) int { return cmp.Compare(a.VehicleID, b.VehicleID) })
 	return states
+}
+
+// level drain by distance; engine temp is Newton's law of cooling plus noise
+func (a *active) telemetry(st *State, t float64) {
+	if a.VehicleType == EVVan {
+		st.Battery = new(max(a.level-batteryPerM*st.Distance, 0))
+		return
+	}
+	st.Fuel = new(max(a.level-fuelPerM*st.Distance, 0))
+	// https://en.wikipedia.org/wiki/Newton%27s_law_of_cooling#First-order_transient_response_of_lumped-capacitance_objects
+	st.EngineTemp = new(warmTemp - (warmTemp-coldTemp)*math.Exp(-t/warmupS) + noise(a.ID, t))
 }
 
 // v(t) = mean·(1 + a₁·sin(ω₁t + φ₁) + a₂·sin(ω₂t + φ₂)), t in sim seconds
@@ -182,4 +219,13 @@ func speedFactor(tripID int64) float64 {
 func wavePhases(tripID int64) [2]float64 {
 	rng := rand.New(rand.NewPCG(uint64(tripID), 1))
 	return [2]float64{2 * math.Pi * rng.Float64(), 2 * math.Pi * rng.Float64()}
+}
+
+func startLevel(tripID int64) float64 {
+	return 0.55 + 0.4*rand.New(rand.NewPCG(uint64(tripID), 2)).Float64()
+}
+
+// ±1; offset 1<<32 keep it off from other seeds above
+func noise(tripID int64, t float64) float64 {
+	return 2*rand.New(rand.NewPCG(uint64(tripID), 1<<32+uint64(t))).Float64() - 1
 }

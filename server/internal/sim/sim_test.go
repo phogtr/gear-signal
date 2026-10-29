@@ -1,7 +1,9 @@
 package sim
 
 import (
+	"fmt"
 	"math"
+	"reflect"
 	"testing"
 	"time"
 
@@ -40,7 +42,7 @@ func start(t *testing.T, s *Sim, trip Trip) time.Time {
 
 func TestTickHalfway(t *testing.T) {
 	s := newSim(t, 1)
-	eta := start(t, s, Trip{ID: 1, VehicleID: 7, RouteID: 1, StartedAt: t0})
+	eta := start(t, s, Trip{ID: 1, VehicleID: 7, VehicleType: EVVan, RouteID: 1, StartedAt: t0})
 
 	half := eta.Sub(t0) / 2
 	a := s.trips[1]
@@ -65,7 +67,7 @@ func TestTickHalfway(t *testing.T) {
 
 func TestTripCompletesOnceAndIsDropped(t *testing.T) {
 	s := newSim(t, 1)
-	eta := start(t, s, Trip{ID: 1, VehicleID: 7, RouteID: 1, StartedAt: t0})
+	eta := start(t, s, Trip{ID: 1, VehicleID: 7, VehicleType: EVVan, RouteID: 1, StartedAt: t0})
 
 	st := s.Tick(eta.Add(time.Minute))[0]
 	if !st.Done || st.Speed != 0 {
@@ -81,7 +83,7 @@ func TestTripCompletesOnceAndIsDropped(t *testing.T) {
 
 func TestTickBeforeStartStaysAtOrigin(t *testing.T) {
 	s := newSim(t, 1)
-	start(t, s, Trip{ID: 1, VehicleID: 7, RouteID: 1, StartedAt: t0})
+	start(t, s, Trip{ID: 1, VehicleID: 7, VehicleType: EVVan, RouteID: 1, StartedAt: t0})
 
 	st := s.Tick(t0.Add(-time.Second))[0]
 	near(t, "distance", st.Distance, 0, 0)
@@ -90,7 +92,7 @@ func TestTickBeforeStartStaysAtOrigin(t *testing.T) {
 
 func TestMultiplierSpeedsUpTime(t *testing.T) {
 	slow, fast := newSim(t, 1), newSim(t, 10)
-	trip := Trip{ID: 1, VehicleID: 7, RouteID: 1, StartedAt: t0}
+	trip := Trip{ID: 1, VehicleID: 7, VehicleType: EVVan, RouteID: 1, StartedAt: t0}
 	slowETA, fastETA := start(t, slow, trip), start(t, fast, trip)
 
 	near(t, "eta ratio", slowETA.Sub(t0).Seconds()/fastETA.Sub(t0).Seconds(), 10, 1e-6)
@@ -124,7 +126,7 @@ func TestETASolvesRouteLength(t *testing.T) {
 	length := newSim(t, 1).routes[1].line.Length()
 	for id := int64(1); id <= 50; id++ {
 		s := newSim(t, 20)
-		eta := start(t, s, Trip{ID: id, VehicleID: 7, RouteID: 1, StartedAt: t0})
+		eta := start(t, s, Trip{ID: id, VehicleID: 7, VehicleType: EVVan, RouteID: 1, StartedAt: t0})
 		a := s.trips[id]
 
 		near(t, "distance at arrival", a.distanceAt(a.travel), length, 1e-6)
@@ -145,7 +147,7 @@ func TestSpeedWavesAroundTripAverageAndSurvivesRestart(t *testing.T) {
 	phases := map[[2]float64]bool{}
 
 	for id := int64(1); id <= 50; id++ {
-		trip := Trip{ID: id, VehicleID: id, RouteID: 1, StartedAt: t0}
+		trip := Trip{ID: id, VehicleID: id, VehicleType: []string{EVVan, DieselTruck}[id%2], RouteID: 1, StartedAt: t0}
 		before, after := newSim(t, 1), newSim(t, 1) // a "restart" between them
 		start(t, before, trip)
 		start(t, after, trip)
@@ -163,7 +165,7 @@ func TestSpeedWavesAroundTripAverageAndSurvivesRestart(t *testing.T) {
 		}
 
 		at := t0.Add(40 * time.Second)
-		if s1, s2 := before.Tick(at)[0], after.Tick(at)[0]; s1 != s2 {
+		if s1, s2 := before.Tick(at)[0], after.Tick(at)[0]; !reflect.DeepEqual(s1, s2) {
 			t.Errorf("trip %d: %+v before restart, %+v after", id, s1, s2)
 		}
 	}
@@ -194,7 +196,7 @@ func TestSpeedFactorUnchanged(t *testing.T) {
 
 func TestResumedTripContinuesWhereItWouldBe(t *testing.T) {
 	s := newSim(t, 1)
-	start(t, s, Trip{ID: 1, VehicleID: 7, RouteID: 1, StartedAt: t0.Add(-30 * time.Second)})
+	start(t, s, Trip{ID: 1, VehicleID: 7, VehicleType: EVVan, RouteID: 1, StartedAt: t0.Add(-30 * time.Second)})
 
 	st := s.Tick(t0)[0]
 	near(t, "distance after 30 s", st.Distance, s.trips[1].distanceAt(30), 1e-9)
@@ -203,7 +205,7 @@ func TestResumedTripContinuesWhereItWouldBe(t *testing.T) {
 func TestTickSortsByVehicle(t *testing.T) {
 	s := newSim(t, 1)
 	for _, v := range []int64{9, 2, 5} {
-		start(t, s, Trip{ID: v, VehicleID: v, RouteID: 1, StartedAt: t0})
+		start(t, s, Trip{ID: v, VehicleID: v, VehicleType: EVVan, RouteID: 1, StartedAt: t0})
 	}
 	var got []int64
 	for _, st := range s.Tick(t0.Add(time.Second)) {
@@ -226,11 +228,99 @@ func TestErrors(t *testing.T) {
 	}
 
 	s := newSim(t, 1)
-	if _, err := s.Start(Trip{ID: 1, RouteID: 99, StartedAt: t0}); err == nil {
+	if _, err := s.Start(Trip{ID: 1, VehicleType: EVVan, RouteID: 99, StartedAt: t0}); err == nil {
 		t.Error("unknown route: want error")
 	}
-	start(t, s, Trip{ID: 1, RouteID: 1, StartedAt: t0})
-	if _, err := s.Start(Trip{ID: 1, RouteID: 1, StartedAt: t0}); err == nil {
+	start(t, s, Trip{ID: 1, VehicleType: EVVan, RouteID: 1, StartedAt: t0})
+	if _, err := s.Start(Trip{ID: 1, VehicleType: EVVan, RouteID: 1, StartedAt: t0}); err == nil {
 		t.Error("duplicate trip: want error")
+	}
+	if _, err := s.Start(Trip{ID: 2, VehicleType: "bike", RouteID: 1, StartedAt: t0}); err == nil {
+		t.Error("unknown vehicle type: want error")
+	}
+}
+
+func TestTelemetryByVehicleType(t *testing.T) {
+	s := newSim(t, 1)
+	start(t, s, Trip{ID: 1, VehicleID: 1, VehicleType: EVVan, RouteID: 1, StartedAt: t0})
+	start(t, s, Trip{ID: 2, VehicleID: 2, VehicleType: DieselTruck, RouteID: 1, StartedAt: t0})
+
+	states := s.Tick(t0.Add(10 * time.Second))
+	if ev := states[0]; ev.Battery == nil || ev.Fuel != nil || ev.EngineTemp != nil {
+		t.Errorf("EV: want battery only, got %+v", ev)
+	}
+	if d := states[1]; d.Battery != nil || d.Fuel == nil || d.EngineTemp == nil {
+		t.Errorf("diesel: want fuel and engine temp only, got %+v", d)
+	}
+}
+
+func TestLevelsDrainByDistance(t *testing.T) {
+	for _, tt := range []struct {
+		vehicleType string
+		perKm       float64
+	}{{EVVan, 0.004}, {DieselTruck, 0.35 / 300}} {
+		s := newSim(t, 1)
+		eta := start(t, s, Trip{ID: 3, VehicleID: 1, VehicleType: tt.vehicleType, RouteID: 1, StartedAt: t0})
+		level := func(st State) float64 {
+			if st.Battery != nil {
+				return *st.Battery
+			}
+			return *st.Fuel
+		}
+
+		first := s.Tick(t0)[0]
+		initial := startLevel(3)
+		if initial < 0.55 || initial > 0.95 {
+			t.Errorf("start level %g outside 55-95%%", initial)
+		}
+		near(t, tt.vehicleType+" level at start", level(first), initial, 1e-12)
+
+		mid := s.Tick(t0.Add(30 * time.Second))[0]
+		near(t, tt.vehicleType+" level mid-trip", level(mid), initial-tt.perKm*mid.Distance/1000, 1e-12)
+
+		end := s.Tick(eta.Add(time.Second))[0]
+		near(t, tt.vehicleType+" level at arrival", level(end), initial-tt.perKm*end.Distance/1000, 1e-12)
+	}
+}
+
+func TestEngineWarmsUp(t *testing.T) {
+	// 1° east ≈ 111 km in an hour, long enough to reach operating temperature
+	long := Route{ID: 2, Points: []geo.Point{{0, 0}, {1, 0}}, DurationS: 3600}
+	s, err := New([]Route{long}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start(t, s, Trip{ID: 1, VehicleID: 1, VehicleType: DieselTruck, RouteID: 2, StartedAt: t0})
+
+	for _, tt := range []struct {
+		sec  int
+		want float64
+	}{
+		{0, 25},
+		{180, 90 - 65*math.Exp(-1)}, // one time constant: 63% of the way
+		{1800, 90},
+	} {
+		st := s.Tick(t0.Add(time.Duration(tt.sec) * time.Second))[0]
+		near(t, fmt.Sprintf("engine temp at %d s", tt.sec), *st.EngineTemp, tt.want, 1.01)
+	}
+}
+
+func TestNoiseIsDeterministicPerSimSecond(t *testing.T) {
+	seen := map[float64]bool{}
+	for sec := range 100 {
+		n := noise(1, float64(sec)+0.2)
+		if n < -1 || n > 1 {
+			t.Errorf("noise %g outside ±1", n)
+		}
+		if again := noise(1, float64(sec)+0.9); again != n {
+			t.Errorf("second %d: %g then %g within the same second", sec, n, again)
+		}
+		seen[n] = true
+	}
+	if len(seen) < 95 {
+		t.Errorf("only %d distinct values in 100 seconds", len(seen))
+	}
+	if noise(1, 5) == noise(2, 5) {
+		t.Error("two trips share the same noise")
 	}
 }

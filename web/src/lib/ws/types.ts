@@ -23,4 +23,7 @@ export interface VehicleState {
   degree: number /* float64 */; // compass heading, 0 = north, clockwise
   progress: number /* float64 */; // 0..1
   done: boolean;
+  battery?: number /* float64 */; // 0..1, EVs only
+  fuel?: number /* float64 */; // 0..1, diesels only
+  engineTemp?: number /* float64 */; // °C (not kelvin), diesels only
 }
