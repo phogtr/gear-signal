@@ -2,10 +2,11 @@ import type { ReactNode } from "react";
 
 import { PlannedBadge } from "../schedule/TripCells";
 import { StatusIcon } from "../map/StatusIcon";
+import { MetricTile } from "./MetricTile";
 
 import { useSocketStore } from "../../lib/ws/socket";
 import { useNow } from "../../lib/useNow";
-import { readouts, type Readout } from "../../lib/console";
+import { metrics, type Metric } from "../../lib/console";
 import { formatClock, formatCountdown, routeLabel } from "../../lib/format";
 import { VEHICLE_STATUSES, VEHICLE_TYPE_LABELS } from "../../constants/map";
 
@@ -71,7 +72,7 @@ export const TelemetryPanel = ({ vehicle, depots, routes, trips }: Props) => {
     );
   }
 
-  const rows: Readout[] = readouts(state, route.distance);
+  const rows: Metric[] = metrics(state, route.distance);
   if (live && trip?.eta) {
     const eta = new Date(trip.eta);
     rows.push({
@@ -101,22 +102,9 @@ export const TelemetryPanel = ({ vehicle, depots, routes, trips }: Props) => {
         />
       </div>
 
-      <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+      <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
         {rows.map((r) => (
-          <div
-            key={r.label}
-            className="flex flex-col gap-1 p-3 rounded-md border border-border"
-          >
-            <dt className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
-              {r.label}
-            </dt>
-            <dd className="flex flex-wrap items-baseline gap-x-1.5">
-              <span className="font-mono text-2xl whitespace-nowrap tabular-nums sm:text-3xl">
-                {r.value}
-              </span>
-              <span className="text-xs text-muted-foreground">{r.unit}</span>
-            </dd>
-          </div>
+          <MetricTile key={r.label} metric={r} />
         ))}
       </dl>
     </Panel>

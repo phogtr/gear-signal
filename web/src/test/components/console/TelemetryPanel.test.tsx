@@ -27,7 +27,7 @@ beforeEach(() =>
 );
 
 describe("TelemetryPanel", () => {
-  it("shows an EV's live readouts and ETA", () => {
+  it("shows an EV's live metrics and ETA", () => {
     useSocketStore.setState({ vehicles: [live(5)] });
     const eta = new Date(Date.now() + 3 * 60_000 - 1000).toISOString();
     renderPanel(van, [
@@ -51,6 +51,12 @@ describe("TelemetryPanel", () => {
     expect(value("Remaining")).toHaveTextContent("30.0km");
     expect(value("ETA")).toHaveTextContent("in 3 min");
     expect(screen.queryByText("Fuel")).not.toBeInTheDocument();
+    expect(
+      screen.getAllByRole("meter").map((m) => m.getAttribute("aria-valuetext")),
+    ).toEqual([
+      "72 km/h, warning above 105 km/h",
+      "70.0 %, warning below 20 %",
+    ]);
   });
 
   it("shows a diesel's fuel and engine temperature", () => {
@@ -60,6 +66,14 @@ describe("TelemetryPanel", () => {
     renderPanel(truck);
 
     expect(value("Fuel")).toHaveTextContent("42.0%");
+    expect(screen.getByRole("meter", { name: "Engine temp" })).toHaveAttribute(
+      "aria-valuetext",
+      "90.3 °C, critical above 105 °C",
+    );
+    expect(screen.getByRole("meter", { name: "Fuel" })).toHaveAttribute(
+      "aria-valuenow",
+      "42",
+    );
     expect(value("Engine temp")).toHaveTextContent("90.3°C");
     expect(screen.queryByText("Battery")).not.toBeInTheDocument();
   });
