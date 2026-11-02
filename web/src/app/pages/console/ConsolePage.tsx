@@ -34,9 +34,6 @@ export const ConsolePage = () => {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">Console</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Live telemetry for a vehicle on a trip
-          </p>
         </div>
         <SocketStatus />
       </div>
@@ -51,7 +48,7 @@ export const ConsolePage = () => {
       )}
 
       {isReady && (
-        <div className="grid gap-4 md:min-h-0 md:flex-1 md:grid-cols-[16rem_1fr] md:grid-rows-[minmax(0,1fr)] md:items-start">
+        <div className="grid gap-4 md:grid-cols-[16rem_1fr] md:items-start">
           <ActiveVehiclePicker
             vehicles={vehicles.data!}
             depots={depots.data!}

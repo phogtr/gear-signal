@@ -110,3 +110,27 @@ export const gaugeText = (r: Metric): string => {
   const value = `${r.value} ${r.unit}`;
   return t ? `${value}, ${t.severity} ${t.when} ${t.value} ${r.unit}` : value;
 };
+
+export const decimals = (value: string): number =>
+  value.split(".")[1]?.length ?? 0;
+
+// e.g. "Speed, last 60 s: 48 to 77 km/h, now 69 km/h"
+export const chartSummary = (
+  label: string,
+  unit: string,
+  digits: number,
+  windowS: number,
+  values: ArrayLike<number>,
+): string => {
+  if (values.length === 0) return `${label}: waiting for data`;
+
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (let i = 0; i < values.length; i++) {
+    lo = Math.min(lo, values[i]);
+    hi = Math.max(hi, values[i]);
+  }
+  const f = (v: number) => v.toFixed(digits);
+  const now = values[values.length - 1];
+  return `${label}, last ${windowS} s: ${f(lo)} to ${f(hi)} ${unit}, now ${f(now)} ${unit}`;
+};

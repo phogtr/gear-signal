@@ -42,7 +42,7 @@ export const ActiveVehiclePicker = ({
   return (
     <nav
       aria-labelledby="picker-heading"
-      className="flex min-h-0 flex-col rounded-lg border border-border bg-card md:max-h-full"
+      className="flex min-h-0 flex-col rounded-lg border border-border bg-card md:sticky md:top-6 md:max-h-[calc(100dvh-6rem)]"
     >
       <h2
         id="picker-heading"

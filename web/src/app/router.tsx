@@ -2,7 +2,6 @@ import { createBrowserRouter, Navigate } from "react-router";
 
 import { App } from "./App";
 
-import { ConsolePage } from "./pages/console/ConsolePage";
 import { SchedulePage } from "./pages/schedule/SchedulePage";
 import { ReplayPage } from "./pages/replay/ReplayPage";
 
@@ -28,7 +27,12 @@ export const router = createBrowserRouter([
         }),
       },
       { path: SCHEDULE_ROUTE, element: <SchedulePage /> },
-      { path: CONSOLE_ROUTE, element: <ConsolePage /> },
+      {
+        path: CONSOLE_ROUTE,
+        lazy: async () => ({
+          Component: (await import("./pages/console/ConsolePage")).ConsolePage,
+        }),
+      },
       { path: REPLAY_ROUTE, element: <ReplayPage /> },
       {
         path: "*",

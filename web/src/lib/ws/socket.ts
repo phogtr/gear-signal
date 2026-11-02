@@ -14,12 +14,14 @@ interface SocketState {
   status: SocketStatus;
   vehicles: VehicleState[];
   completed: Record<number, Completed>;
+  ts: string | null; // last tick's server time
 }
 
 export const useSocketStore = create<SocketState>(() => ({
   status: "connecting",
   vehicles: [],
   completed: {},
+  ts: null,
 }));
 
 export const connectSocket = (url: string, onTripsChanged: () => void) => {
@@ -43,7 +45,7 @@ export const connectSocket = (url: string, onTripsChanged: () => void) => {
       const { vehicles, isChanged } = applyTick(prev.vehicles, tick);
       const completed = applyCompleted(prev.completed, tick);
 
-      useSocketStore.setState({ vehicles, completed });
+      useSocketStore.setState({ vehicles, completed, ts: tick.ts });
       if (isChanged) onTripsChanged();
     };
 

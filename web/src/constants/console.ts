@@ -17,7 +17,7 @@ export const BATTERY_LOW: Threshold = {
   severity: "warning",
 };
 
-// speeding peaks ~115 km/h, cold engine start at ~25 °C
+// speed peak ~115 km/h, cold engine start at ~25 °C
 export const SPEED_MAX = 140;
-export const ENGINE_TEMP_MIN = 20;
+export const ENGINE_TEMP_MIN = 0;
 export const ENGINE_TEMP_MAX = 120;

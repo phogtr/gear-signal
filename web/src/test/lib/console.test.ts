@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  chartSummary,
+  decimals,
   gaugeFraction,
   gaugeText,
-  parseVehicleId,
   metrics,
+  parseVehicleId,
 } from "../../lib/console";
 import type { VehicleState } from "../../lib/ws/types";
 
@@ -82,7 +84,7 @@ describe("gauges", () => {
     const diesel = gauges(state({ fuel: 0.5, engineTemp: 89.64 }));
     expect(diesel.Fuel).toEqual({ value: 50, min: 0, max: 100 });
     expect(diesel["Engine temp"]).toMatchObject({
-      min: 20,
+      min: 0,
       max: 120,
       threshold: { value: 105, severity: "critical" },
     });
@@ -99,5 +101,27 @@ describe("gauges", () => {
     const [speed, battery] = metrics(state({ battery: 0.15 }), 30_000);
     expect(gaugeText(speed)).toBe("60 km/h, warning above 105 km/h");
     expect(gaugeText(battery)).toBe("15.0 %, warning below 20 %");
+  });
+});
+
+describe("charts", () => {
+  it("rounds like the tile", () => {
+    expect(decimals("72")).toBe(0);
+    expect(decimals("62.3")).toBe(1);
+  });
+
+  it("summarises the window in words", () => {
+    expect(chartSummary("Speed", "km/h", 0, 60, [])).toBe(
+      "Speed: waiting for data",
+    );
+    expect(
+      chartSummary(
+        "Speed",
+        "km/h",
+        0,
+        60,
+        Float64Array.of(61.4, 48.2, 77.6, 69),
+      ),
+    ).toBe("Speed, last 60 s: 48 to 78 km/h, now 69 km/h");
   });
 });

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { PlannedBadge } from "../schedule/TripCells";
 import { StatusIcon } from "../map/StatusIcon";
 import { MetricTile } from "./MetricTile";
+import { TelemetryCharts } from "./TelemetryCharts";
 
 import { useSocketStore } from "../../lib/ws/socket";
 import { useNow } from "../../lib/useNow";
@@ -107,6 +108,12 @@ export const TelemetryPanel = ({ vehicle, depots, routes, trips }: Props) => {
           <MetricTile key={r.label} metric={r} />
         ))}
       </dl>
+
+      <TelemetryCharts
+        vehicleId={vehicle.id}
+        data={rows.filter((r) => r.gauge)}
+        startedAt={trip?.startedAt}
+      />
     </Panel>
   );
 };

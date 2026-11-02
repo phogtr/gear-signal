@@ -1,11 +1,18 @@
 // @vitest-environment jsdom
 import { act, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TelemetryPanel } from "../../../components/console/TelemetryPanel";
 import { useSocketStore } from "../../../lib/ws/socket";
 import type { Trip, Vehicle } from "../../../lib/api/client";
 import { depots, live, routes, vehicle } from "./fixtures";
+
+// uPlot needs canvas and matchMedia, which jsdom lacks; charts are checked in the browser
+vi.mock("../../../components/console/TelemetryCharts", () => ({
+  TelemetryCharts: ({ data }: { data: { label: string }[] }) => (
+    <p>charts: {data.map((m) => m.label).join(", ")}</p>
+  ),
+}));
 
 const van = vehicle(5, "VAN-05");
 const truck = vehicle(7, "TRK-07", { type: "diesel_truck" });
@@ -76,6 +83,9 @@ describe("TelemetryPanel", () => {
     );
     expect(value("Engine temp")).toHaveTextContent("90.3°C");
     expect(screen.queryByText("Battery")).not.toBeInTheDocument();
+    expect(
+      screen.getByText("charts: Speed, Fuel, Engine temp"),
+    ).toBeInTheDocument();
   });
 
   it("keeps the final values once the trip completes", () => {
