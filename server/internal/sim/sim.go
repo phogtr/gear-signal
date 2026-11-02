@@ -70,6 +70,30 @@ const (
 	warmupS  = 180.0
 )
 
+const (
+	faultChance  = 0.15
+	faultMaxS    = 600.0     // sim seconds; 30s real at SIM_SPEED 20
+	speedingPeak = 125 / 3.6 // m/s, ~110-140 km/h
+	overheatTemp = 112.0
+	detourPeak   = 300.0 // meters to the right of the route
+)
+
+type faultKind int
+
+const (
+	noFault faultKind = iota
+	speeding
+	overheat
+	detour
+)
+
+type fault struct {
+	kind  faultKind
+	start float64 // sim seconds
+	dur   float64 // sim seconds
+	boost float64 // fraction of mean
+}
+
 type route struct {
 	line     *geo.Polyline
 	avgSpeed float64 // m/s
@@ -82,6 +106,7 @@ type active struct {
 	phases [2]float64 // radians
 	travel float64    // sim seconds from start to arrival
 	level  float64    // battery or fuel at the start, 0..1
+	fault  fault
 }
 
 // Sim is not safe for concurrent use; one goroutine owns it
@@ -126,7 +151,19 @@ func (s *Sim) Start(t Trip) (time.Time, error) {
 	}
 
 	a := &active{Trip: t, route: r, mean: r.avgSpeed * speedFactor(t.ID), phases: wavePhases(t.ID), level: startLevel(t.ID)}
-	a.travel = a.travelTime(r.line.Length())
+
+	length := r.line.Length()
+	if kind, progress := pickFault(t.ID, t.VehicleType); kind != noFault {
+		f := fault{kind: kind, start: a.timeAt(progress * length), dur: min(faultMaxS, 0.3*length/a.mean)}
+
+		if kind == speeding {
+			// speedAt: mean · (1 + waves + boost · hann)
+			// hann = 1, ignore wave; mean · (1 + boost) = speedingPeak -> boost = ...
+			f.boost = max(speedingPeak/a.mean-1, 0)
+		}
+		a.fault = f
+	}
+	a.travel = a.timeAt(length)
 	s.trips[t.ID] = a
 
 	return t.StartedAt.Add(time.Duration(a.travel / s.multiplier * float64(time.Second))), nil
@@ -146,6 +183,12 @@ func (s *Sim) Tick(now time.Time) []State {
 		}
 
 		p, degree := a.route.line.PointAt(d)
+		if a.fault.kind == detour {
+			// sideways only, distance & ETA don't change
+			if off := detourPeak * a.fault.doHannFunc(t); off > 0 {
+				p = geo.Destination(p, degree+90, off)
+			}
+		}
 		st := State{
 			VehicleID: a.VehicleID,
 			TripID:    a.ID,
@@ -177,17 +220,23 @@ func (a *active) telemetry(st *State, t float64) {
 	}
 	st.Fuel = new(max(a.level-fuelPerM*st.Distance, 0))
 	// https://en.wikipedia.org/wiki/Newton%27s_law_of_cooling#First-order_transient_response_of_lumped-capacitance_objects
-	st.EngineTemp = new(warmTemp - (warmTemp-coldTemp)*math.Exp(-t/warmupS) + noise(a.ID, t))
+	temp := warmTemp - (warmTemp-coldTemp)*math.Exp(-t/warmupS)
+	if a.fault.kind == overheat {
+		temp += (overheatTemp - temp) * a.fault.doHannFunc(t)
+	}
+	st.EngineTemp = new(temp + noise(a.ID, t))
 }
 
-// v(t) = mean·(1 + a₁·sin(ω₁t + φ₁) + a₂·sin(ω₂t + φ₂)), t in sim seconds
+// v(t) = mean·(1 + a₁·sin(ω₁t + φ₁) + a₂·sin(ω₂t + φ₂) + fault boost), t in sim seconds
 func (a *active) speedAt(t float64) float64 {
-	return a.mean * (1 + wave1Amp*math.Sin(wave1Omega*t+a.phases[0]) + wave2Amp*math.Sin(wave2Omega*t+a.phases[1]))
+	return a.mean * (1 + wave1Amp*math.Sin(wave1Omega*t+a.phases[0]) + wave2Amp*math.Sin(wave2Omega*t+a.phases[1]) +
+		a.fault.boost*a.fault.doHannFunc(t))
 }
 
 // integral of speedAt from 0 to t
 func (a *active) distanceAt(t float64) float64 {
-	return a.mean * (t + waveShift(wave1Amp, wave1Omega, a.phases[0], t) + waveShift(wave2Amp, wave2Omega, a.phases[1], t))
+	return a.mean * (t + waveShift(wave1Amp, wave1Omega, a.phases[0], t) + waveShift(wave2Amp, wave2Omega, a.phases[1], t) +
+		a.fault.boost*a.fault.integralHannFunc(t))
 }
 
 // integral of amp·sin(ωt + φ) from 0 to t
@@ -195,19 +244,51 @@ func waveShift(amp, omega, phase, t float64) float64 {
 	return amp / omega * (math.Cos(phase) - math.Cos(omega*t+phase))
 }
 
-// t where distanceAt(t) = length by bisection. t is within MaxLagS bound of d/v.
-// Find first t where d(t) >= length
-func (a *active) travelTime(length float64) float64 {
-	lo, hi := max(length/a.mean-MaxLagS, 0), length/a.mean+MaxLagS
-	for range 50 {
+// first t where distanceAt(t) >= d, by bisection
+func (a *active) timeAt(d float64) float64 {
+	lo, hi := 0.0, d/a.mean+MaxLagS
+	for range 60 {
 		mid := (lo + hi) / 2
-		if a.distanceAt(mid) < length {
-			lo = mid // lo is largest value that less than length
+		if a.distanceAt(mid) < d {
+			lo = mid // lo is largest value that < d
 		} else {
-			hi = mid // hi is smallest value that greater/equal to length
+			hi = mid // hi is smallest value that >= d
 		}
 	}
 	return hi
+}
+
+// 0 = no fault, rise to 1 over first quarter, flat, fall over last quarter.
+// How strong the fault, 1 = full, 0.5 = half.
+// Hann window-like https://en.wikipedia.org/wiki/Hann_function
+func (f fault) doHannFunc(t float64) float64 {
+	tau, ramp := t-f.start, f.dur/4
+	switch {
+	case f.kind == noFault || tau <= 0 || tau >= f.dur:
+		return 0
+	case tau < ramp:
+		return (1 - math.Cos(math.Pi*tau/ramp)) / 2
+	case tau > f.dur-ramp:
+		return (1 - math.Cos(math.Pi*(f.dur-tau)/ramp)) / 2
+	}
+	return 1
+}
+
+// integral of doHannFunc from 0 to t
+func (f fault) integralHannFunc(t float64) float64 {
+	tau, ramp := t-f.start, f.dur/4
+	rise := func(x float64) float64 { return x/2 - ramp/(2*math.Pi)*math.Sin(math.Pi*x/ramp) }
+	switch {
+	case f.kind == noFault || tau <= 0:
+		return 0
+	case tau < ramp:
+		return rise(tau)
+	case tau <= f.dur-ramp:
+		return ramp/2 + tau - ramp
+	case tau < f.dur:
+		return f.dur - ramp - rise(f.dur-tau)
+	}
+	return f.dur - ramp
 }
 
 // varies each trip's speed by ±10% of the route average.
@@ -223,6 +304,20 @@ func wavePhases(tripID int64) [2]float64 {
 
 func startLevel(tripID int64) float64 {
 	return 0.55 + 0.4*rand.New(rand.NewPCG(uint64(tripID), 2)).Float64()
+}
+
+// fault start at 30-60% progress
+func pickFault(tripID int64, vehicleType string) (faultKind, float64) {
+	rng := rand.New(rand.NewPCG(uint64(tripID), 3))
+	if rng.Float64() >= faultChance {
+		return noFault, 0
+	}
+	kinds := []faultKind{speeding, detour}
+	if vehicleType == DieselTruck {
+		kinds = append(kinds, overheat)
+	}
+	kind := kinds[rng.IntN(len(kinds))]
+	return kind, 0.3 + 0.3*rng.Float64()
 }
 
 // ±1; offset 1<<32 keep it off from other seeds above

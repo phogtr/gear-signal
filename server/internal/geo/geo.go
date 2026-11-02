@@ -16,7 +16,7 @@ func (p Point) Lat() float64 { return p[1] }
 
 func rad(deg float64) float64 { return deg * math.Pi / 180 }
 
-// returns the great-circle distance in meters (haversine formula).
+// return the great-circle distance in meters (haversine formula).
 // https://www.movable-type.co.uk/scripts/latlong.html
 func Distance(a, b Point) float64 {
 	dLat := rad(b.Lat() - a.Lat())
@@ -29,7 +29,7 @@ func Distance(a, b Point) float64 {
 	return earthRadius * c
 }
 
-// returns the compass heading from a to b in degrees: 0 = north, 90 = east.
+// return the compass heading from a to b in degrees: 0 = north, 90 = east.
 // https://www.movable-type.co.uk/scripts/latlong.html
 func Bearing(a, b Point) float64 {
 	lat1, lat2 := rad(a.Lat()), rad(b.Lat())
@@ -39,6 +39,17 @@ func Bearing(a, b Point) float64 {
 	x := math.Cos(lat1)*math.Sin(lat2) - math.Sin(lat1)*math.Cos(lat2)*math.Cos(dLng)
 	deg := math.Atan2(y, x)
 	return math.Mod(deg*180/math.Pi+360, 360)
+}
+
+// return destination point given d and heading from start point.
+// https://www.movable-type.co.uk/scripts/latlong.html
+func Destination(p Point, heading, d float64) Point {
+	lat1, lng1, theta := rad(p.Lat()), rad(p.Lng()), rad(heading)
+	delta := d / earthRadius
+
+	lat2 := math.Asin(math.Sin(lat1)*math.Cos(delta) + math.Cos(lat1)*math.Sin(delta)*math.Cos(theta))
+	lng2 := lng1 + math.Atan2(math.Sin(theta)*math.Sin(delta)*math.Cos(lat1), math.Cos(delta)-math.Sin(lat1)*math.Sin(lat2))
+	return Point{lng2 * 180 / math.Pi, lat2 * 180 / math.Pi}
 }
 
 // Polyline is a route geometry with precomputed distances, so a position can be
@@ -91,9 +102,18 @@ func (pl *Polyline) PointAt(d float64) (Point, float64) {
 	return p, Bearing(a, b)
 }
 
+// return shortest distance in meters from p to segment
+func (pl *Polyline) DistanceTo(p Point) float64 {
+	best := math.Inf(1)
+	for i := 1; i < len(pl.points); i++ {
+		best = math.Min(best, distanceToSegment(p, pl.points[i-1], pl.points[i]))
+	}
+	return best
+}
+
 // removes points that deviate less than tolerance meters from the
 // overall shape (Douglas–Peucker). First and last points are always kept.
-func ApplyDouglasPeucker(points []Point, tolerance float64) []Point {
+func DoDouglasPeucker(points []Point, tolerance float64) []Point {
 	if len(points) < 3 {
 		return points
 	}

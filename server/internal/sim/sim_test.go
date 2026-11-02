@@ -130,7 +130,8 @@ func TestETASolvesRouteLength(t *testing.T) {
 		a := s.trips[id]
 
 		near(t, "distance at arrival", a.distanceAt(a.travel), length, 1e-6)
-		if lag := a.travel - length/a.mean; math.Abs(lag) > MaxLagS {
+		// speeding arrives early by design; the bound is about the waves
+		if lag := a.travel - length/a.mean; math.Abs(lag) > MaxLagS && a.fault.kind != speeding {
 			t.Errorf("trip %d: travel %g s is %g s off the average-speed time, max %g", id, a.travel, lag, MaxLagS)
 		}
 		if st := s.Tick(eta.Add(-time.Millisecond))[0]; st.Done {
@@ -159,6 +160,9 @@ func TestSpeedWavesAroundTripAverageAndSurvivesRestart(t *testing.T) {
 		phases[a.phases] = true
 		for sec := 0; sec <= 600; sec += 7 {
 			v := a.speedAt(float64(sec))
+			if a.fault.kind == speeding && a.fault.doHannFunc(float64(sec)) > 0 {
+				continue // the bump is tested in TestSpeedingBump
+			}
 			if v < 0.75*a.mean-1e-9 || v > 1.25*a.mean+1e-9 {
 				t.Errorf("trip %d at %d s: speed %g outside ±25%% of %g", id, sec, v, a.mean)
 			}
@@ -323,4 +327,138 @@ func TestNoiseIsDeterministicPerSimSecond(t *testing.T) {
 	if noise(1, 5) == noise(2, 5) {
 		t.Error("two trips share the same noise")
 	}
+}
+
+// first trip ID (from 1) that gets kind, so tests don't depend on magic IDs
+func tripWith(t *testing.T, kind faultKind, vehicleType string) int64 {
+	t.Helper()
+	for id := int64(1); id < 10_000; id++ {
+		if k, _ := pickFault(id, vehicleType); k == kind {
+			return id
+		}
+	}
+	t.Fatalf("no trip with fault %d", kind)
+	return 0
+}
+
+// a trip on a route long enough for the whole fault: 0.1° east ≈ 11 km in 900 s
+func faultTrip(t *testing.T, kind faultKind, vehicleType string) (*Sim, *active) {
+	t.Helper()
+	long := Route{ID: 3, Points: []geo.Point{{0, 0}, {0.1, 0}}, DurationS: 900}
+	s, err := New([]Route{long}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := tripWith(t, kind, vehicleType)
+	start(t, s, Trip{ID: id, VehicleID: 1, VehicleType: vehicleType, RouteID: 3, StartedAt: t0})
+	return s, s.trips[id]
+}
+
+// the middle of the fault's plateau, in sim seconds
+func plateau(a *active) float64 { return a.fault.start + a.fault.dur/2 }
+
+func TestPickFault(t *testing.T) {
+	const n = 4000
+	counts := map[faultKind]int{}
+	for id := int64(1); id <= n; id++ {
+		kind, progress := pickFault(id, DieselTruck)
+		if again, p2 := pickFault(id, DieselTruck); again != kind || p2 != progress {
+			t.Fatalf("trip %d: fault not deterministic", id)
+		}
+		if kind != noFault && (progress < 0.3 || progress > 0.6) {
+			t.Errorf("trip %d: starts at %.2f progress, want 0.3-0.6", id, progress)
+		}
+		if k, _ := pickFault(id, EVVan); k == overheat {
+			t.Errorf("trip %d: an EV got an overheat", id)
+		}
+		counts[kind]++
+	}
+	if share := float64(n-counts[noFault]) / n; share < 0.13 || share > 0.17 {
+		t.Errorf("%.1f%% of trips have a fault, want ~15%%", share*100)
+	}
+	for _, k := range []faultKind{speeding, overheat, detour} {
+		if counts[k] < n/40 {
+			t.Errorf("fault %d picked only %d times", k, counts[k])
+		}
+	}
+}
+
+func TestDoHannFunc(t *testing.T) {
+	f := fault{kind: detour, start: 100, dur: 400}
+	for _, tt := range []struct{ t, want float64 }{
+		{0, 0}, {100, 0}, {150, 0.5}, {200, 1}, {300, 1}, {400, 1}, {450, 0.5}, {500, 0}, {900, 0},
+	} {
+		near(t, fmt.Sprintf("doHannFunc at %g", tt.t), f.doHannFunc(tt.t), tt.want, 1e-12)
+	}
+
+	// Simpson's rule against the closed form, across every piece
+	const n = 4000
+	h := 600.0 / n
+	sum := f.doHannFunc(0) + f.doHannFunc(600)
+	for i := 1; i < n; i++ {
+		w := 2.0
+		if i%2 == 1 {
+			w = 4
+		}
+		sum += w * f.doHannFunc(float64(i)*h)
+	}
+	near(t, "integral", f.integralHannFunc(600), sum*h/3, 1e-6)
+	near(t, "integral after", f.integralHannFunc(600), 400-100, 1e-9)
+	near(t, "no fault", fault{}.integralHannFunc(600), 0, 0)
+}
+
+func TestSpeedingBump(t *testing.T) {
+	s, a := faultTrip(t, speeding, EVVan)
+	peak := a.speedAt(plateau(a)) * 3.6
+	if peak < 110 || peak > 140 {
+		t.Errorf("plateau speed %.0f km/h, want 110-140 (over the 105 km/h alert)", peak)
+	}
+	if before := a.speedAt(a.fault.start-1) * 3.6; before > 100 {
+		t.Errorf("speed before the fault %.0f km/h, want normal", before)
+	}
+
+	// position is still the integral of speed through the bump
+	const n = 6000
+	end := a.fault.start + a.fault.dur + 60
+	h := end / n
+	sum := a.speedAt(0) + a.speedAt(end)
+	for i := 1; i < n; i++ {
+		w := 2.0
+		if i%2 == 1 {
+			w = 4
+		}
+		sum += w * a.speedAt(float64(i)*h)
+	}
+	near(t, "distance", a.distanceAt(end), sum*h/3, 1e-4)
+	near(t, "arrives at the route's end", a.distanceAt(a.travel), s.routes[3].line.Length(), 1e-6)
+}
+
+func TestOverheat(t *testing.T) {
+	s, a := faultTrip(t, overheat, DieselTruck)
+	at := func(sec float64) float64 {
+		return *s.Tick(t0.Add(time.Duration(sec * float64(time.Second))))[0].EngineTemp
+	}
+	if temp := at(plateau(a)); math.Abs(temp-overheatTemp) > 1 {
+		t.Errorf("plateau temp %.1f °C, want ~112 (over the 105 °C alert)", temp)
+	}
+	if temp := at(a.fault.start + a.fault.dur + 1); temp > 95 {
+		t.Errorf("temp after the fault %.1f °C, want back near 90", temp)
+	}
+}
+
+func TestDetour(t *testing.T) {
+	s, a := faultTrip(t, detour, EVVan)
+	line := s.routes[3].line
+	off := func(sec float64) float64 {
+		st := s.Tick(t0.Add(time.Duration(sec * float64(time.Second))))[0]
+		return line.DistanceTo(geo.Point{st.Lng, st.Lat})
+	}
+	near(t, "off the route before", off(a.fault.start-1), 0, 0.01)
+	near(t, "off the route on the plateau", off(plateau(a)), detourPeak, 1)
+	near(t, "off the route after", off(a.fault.start+a.fault.dur+1), 0, 0.01)
+
+	// sideways only: distance along the route ignores it
+	sec := plateau(a)
+	st := s.Tick(t0.Add(time.Duration(sec * float64(time.Second))))[0]
+	near(t, "distance", st.Distance, a.distanceAt(sec), 1e-6)
 }

@@ -30,6 +30,15 @@ func TestBearing(t *testing.T) {
 	near(t, "west", Bearing(Point{1, 0}, Point{0, 0}), 270, 1e-9)
 }
 
+func TestDestination(t *testing.T) {
+	dtla := Point{-118.2468, 34.0407}
+	for _, heading := range []float64{45, 90, 213} {
+		q := Destination(dtla, heading, 300)
+		near(t, "distance back", Distance(dtla, q), 300, 1e-6)
+		near(t, "bearing back", Bearing(dtla, q), heading, 1e-6)
+	}
+}
+
 func TestNewPolylineRejectsTooFewPoints(t *testing.T) {
 	if _, err := NewPolyline([]Point{{0, 0}}); err == nil {
 		t.Fatal("expected error for a single point")
@@ -68,19 +77,27 @@ func TestPolylinePointAt(t *testing.T) {
 	}
 }
 
-func TestApplyDouglasPeucker(t *testing.T) {
+func TestPolylineDistanceTo(t *testing.T) {
+	pl, _ := NewPolyline([]Point{{0, 0}, {1, 0}})
+
+	near(t, "on the line", pl.DistanceTo(Point{0.5, 0}), 0, 1e-6)
+	near(t, "0.001° north of the line", pl.DistanceTo(Point{0.5, 0.001}), 0.001*metersPerDegree, 0.01)
+	near(t, "beyond the end", pl.DistanceTo(Point{1.001, 0}), 0.001*metersPerDegree, 0.01)
+}
+
+func TestDoDouglasPeucker(t *testing.T) {
 	// Straight line with redundant middle points collapses to its endpoints.
 	straight := []Point{{0, 0}, {0.001, 0}, {0.002, 0}, {0.003, 0}}
-	if got := ApplyDouglasPeucker(straight, 1); len(got) != 2 {
+	if got := DoDouglasPeucker(straight, 1); len(got) != 2 {
 		t.Errorf("straight line kept %d points, want 2", len(got))
 	}
 
 	// A 0.001° (~111 m) bump survives a 10 m tolerance but not a 500 m one.
 	bump := []Point{{0, 0}, {0.001, 0}, {0.002, 0.001}, {0.003, 0}, {0.004, 0}}
-	if got := ApplyDouglasPeucker(bump, 10); !contains(got, Point{0.002, 0.001}) {
+	if got := DoDouglasPeucker(bump, 10); !contains(got, Point{0.002, 0.001}) {
 		t.Errorf("bump with 10 m tolerance dropped the peak: %v", got)
 	}
-	if got := ApplyDouglasPeucker(bump, 500); len(got) != 2 {
+	if got := DoDouglasPeucker(bump, 500); len(got) != 2 {
 		t.Errorf("bump with 500 m tolerance kept %d points, want 2", len(got))
 	}
 }

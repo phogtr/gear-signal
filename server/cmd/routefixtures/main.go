@@ -137,7 +137,7 @@ func build(ctx context.Context, client *osrmClient, depots map[string]depot, spe
 		return routeFixture{}, err
 	}
 
-	coords := geo.ApplyDouglasPeucker(route.Geometry.Coordinates, tolerance)
+	coords := geo.DoDouglasPeucker(route.Geometry.Coordinates, tolerance)
 	for i := range coords {
 		coords[i] = geo.Point{round5(coords[i].Lng()), round5(coords[i].Lat())}
 	}
