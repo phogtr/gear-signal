@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import type { Tick, VehicleState } from "./types";
+import type { AlertEvent, Tick, VehicleState } from "./types";
 
 export type SocketStatus = "connecting" | "live" | "offline";
 
@@ -40,7 +40,10 @@ export const connectSocket = (url: string, onTripsChanged: () => void) => {
     };
 
     ws.onmessage = (e: MessageEvent<string>) => {
-      const tick = JSON.parse(e.data) as Tick;
+      const msg = JSON.parse(e.data) as Tick | AlertEvent;
+      if (msg.type !== "tick") return; // events aren't used yet
+
+      const tick = msg;
       const prev = useSocketStore.getState();
       const { vehicles, isChanged } = applyTick(prev.vehicles, tick);
       const completed = applyCompleted(prev.completed, tick);

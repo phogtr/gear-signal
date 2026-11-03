@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/phogtr/gear-signal/internal/sim"
 	"github.com/phogtr/gear-signal/internal/store"
 )
 
@@ -18,7 +19,9 @@ type fakeStore struct {
 	vehicles  []store.Vehicle
 	completed []int64
 	etas      map[int64]time.Time
+	events    []store.Event
 	failNext  bool
+	failEvent bool
 }
 
 func (f *fakeStore) ListRoutes(context.Context) ([]store.Route, error) { return f.routes, nil }
@@ -67,6 +70,17 @@ func (f *fakeStore) CompleteTrip(_ context.Context, id int64, _ time.Time) error
 			v.Status = "idle"
 			v.DepotID = f.route(t.RouteID).DestinationDepotID
 		}
+	}
+	return nil
+}
+
+func (f *fakeStore) InsertEvents(_ context.Context, events []store.Event) error {
+	if f.failEvent {
+		return errors.New("db down")
+	}
+	for i := range events {
+		events[i].ID = int64(len(f.events) + 1)
+		f.events = append(f.events, events[i])
 	}
 	return nil
 }
@@ -366,5 +380,80 @@ func TestVehicleTypeReachesTheSim(t *testing.T) {
 		if (st.Battery != nil) != ev || (st.EngineTemp != nil) == ev {
 			t.Errorf("vehicle %d: battery %v, engine temp %v", st.VehicleID, st.Battery, st.EngineTemp)
 		}
+	}
+}
+
+// records what was sent, in order
+type fakeWriter struct {
+	ticks  int
+	events []store.Event
+	order  []string
+}
+
+func (w *fakeWriter) Send(time.Time, []sim.State) {
+	w.ticks++
+	w.order = append(w.order, "tick")
+}
+
+func (w *fakeWriter) SendEvents(events []store.Event) {
+	w.events = append(w.events, events...)
+	w.order = append(w.order, "events")
+}
+
+// 0.1° east ≈ 11 km in 900 s, long enough for a whole fault
+var longRoute = store.Route{ID: 3, OriginDepotID: 1, DestinationDepotID: 2, Coordinates: [][2]float64{{0, 0}, {0.1, 0}}, DurationS: 900}
+
+// 40 trips at once: ~15% have a fault, so some alerts fire
+func alertingFleet() *fakeStore {
+	fs := &fakeStore{routes: []store.Route{longRoute}}
+	for id := int64(1); id <= 40; id++ {
+		fs.vehicles = append(fs.vehicles, van(id, "en_route", 1))
+		fs.trips = append(fs.trips, store.Trip{ID: id, VehicleID: id, RouteID: 3, Status: "active", StartedAt: &t0})
+	}
+	return fs
+}
+
+func TestStepRecordsAndSendsAlerts(t *testing.T) {
+	fs := alertingFleet()
+	w := &fakeWriter{}
+	e, err := New(context.Background(), fs, w, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for sec := range 1200 {
+		e.step(context.Background(), t0.Add(time.Duration(sec)*time.Second))
+	}
+
+	if len(fs.events) == 0 {
+		t.Fatal("no alerts recorded")
+	}
+	if !slices.EqualFunc(fs.events, w.events, func(a, b store.Event) bool { return a.ID == b.ID && a.ID > 0 }) {
+		t.Errorf("sent events differ from stored ones: stored %d, sent %d", len(fs.events), len(w.events))
+	}
+	for i, o := range w.order {
+		if o == "events" && (i == 0 || w.order[i-1] != "tick") {
+			t.Errorf("events at %d not right after a tick: %v", i, w.order[max(i-2, 0):i+1])
+		}
+	}
+	for _, ev := range fs.events {
+		if ev.TripID == nil || *ev.TripID != ev.VehicleID || ev.Code == "" || ev.Message == "" || ev.TS.IsZero() {
+			t.Errorf("incomplete event %+v", ev)
+		}
+	}
+}
+
+func TestStepSendsNoAlertsItCouldNotStore(t *testing.T) {
+	fs := alertingFleet()
+	fs.failEvent = true
+	w := &fakeWriter{}
+	e, err := New(context.Background(), fs, w, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for sec := range 1200 {
+		e.step(context.Background(), t0.Add(time.Duration(sec)*time.Second))
+	}
+	if len(w.events) != 0 || w.ticks != 1200 {
+		t.Errorf("sent %d events and %d ticks, want 0 and 1200", len(w.events), w.ticks)
 	}
 }

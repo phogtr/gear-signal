@@ -27,3 +27,13 @@ export interface VehicleState {
   fuel?: number /* float64 */; // 0..1, diesels only
   engineTemp?: number /* float64 */; // °C (not kelvin), diesels only
 }
+export interface AlertEvent {
+  type: "event";
+  id: number /* int64 */;
+  tripId?: number /* int64 */;
+  vehicleId: number /* int64 */;
+  severity: "info" | "warning" | "critical";
+  code: "SPEEDING" | "OVERHEAT" | "ROUTE_DEVIATION" | "BATTERY_LOW";
+  message: string;
+  ts: string /* RFC 3339, UTC */;
+}

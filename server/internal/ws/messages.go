@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/phogtr/gear-signal/internal/sim"
+	"github.com/phogtr/gear-signal/internal/store"
 )
 
 // Tick is sent once a second with every vehicle currently on a trip,
@@ -52,4 +53,28 @@ func NewTick(now time.Time, states []sim.State) Tick {
 		}
 	}
 	return Tick{Type: "tick", TS: now.UTC(), Vehicles: vehicles}
+}
+
+type AlertEvent struct {
+	Type      string    `json:"type" tstype:"\"event\""`
+	ID        int64     `json:"id"`
+	TripID    *int64    `json:"tripId,omitempty"`
+	VehicleID int64     `json:"vehicleId"`
+	Severity  string    `json:"severity" tstype:"\"info\" | \"warning\" | \"critical\""`
+	Code      string    `json:"code" tstype:"\"SPEEDING\" | \"OVERHEAT\" | \"ROUTE_DEVIATION\" | \"BATTERY_LOW\""`
+	Message   string    `json:"message"`
+	TS        time.Time `json:"ts"`
+}
+
+func NewAlertEvent(e store.Event) AlertEvent {
+	return AlertEvent{
+		Type:      "event",
+		ID:        e.ID,
+		TripID:    e.TripID,
+		VehicleID: e.VehicleID,
+		Severity:  e.Severity,
+		Code:      e.Code,
+		Message:   e.Message,
+		TS:        e.TS.UTC(),
+	}
 }

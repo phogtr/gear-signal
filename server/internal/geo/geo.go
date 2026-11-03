@@ -92,7 +92,7 @@ func (pl *Polyline) PointAt(d float64) (Point, float64) {
 	// fraction from 0 to 1. 0 means "at a", 1 means "at b",
 	t := 0.0
 	if seg > 0 {
-		// d - [i-1] is is how far into this segment, measured from its start
+		// d - [i-1] is how far into this segment, measured from its start
 		t = (d - pl.cum[i-1]) / seg
 	}
 	// p is linear interpolation (lerp function)
@@ -100,15 +100,6 @@ func (pl *Polyline) PointAt(d float64) (Point, float64) {
 	// p = a + (b − a) * t
 	p := Point{a.Lng() + (b.Lng()-a.Lng())*t, a.Lat() + (b.Lat()-a.Lat())*t}
 	return p, Bearing(a, b)
-}
-
-// return shortest distance in meters from p to segment
-func (pl *Polyline) DistanceTo(p Point) float64 {
-	best := math.Inf(1)
-	for i := 1; i < len(pl.points); i++ {
-		best = math.Min(best, distanceToSegment(p, pl.points[i-1], pl.points[i]))
-	}
-	return best
 }
 
 // removes points that deviate less than tolerance meters from the

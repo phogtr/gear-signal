@@ -11,6 +11,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/phogtr/gear-signal/internal/sim"
+	"github.com/phogtr/gear-signal/internal/store"
 )
 
 var t0 = time.Date(2026, 10, 11, 9, 0, 0, 0, time.UTC)
@@ -81,6 +82,35 @@ func TestWireFormatWithUnits(t *testing.T) {
 		if !strings.Contains(string(msg), key) {
 			t.Errorf("missing %s in %s", key, msg)
 		}
+	}
+}
+
+func TestEventsAfterTheTickNotReplayed(t *testing.T) {
+	h := NewHub()
+	conn := dial(t, h)
+	waitFor(t, func() bool { return h.clientCount() == 1 })
+
+	trip := int64(1)
+	h.Send(t0, moving)
+	h.SendEvents([]store.Event{
+		{ID: 5, TripID: &trip, VehicleID: 7, Severity: "warning", Code: "SPEEDING", Message: "Speeding at 118 km/h", TS: t0},
+		{ID: 6, TripID: &trip, VehicleID: 7, Severity: "critical", Code: "ROUTE_DEVIATION", Message: "Off route by 160 m", TS: t0},
+	})
+
+	readTick(t, conn)
+	for _, want := range []int64{5, 6} {
+		conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+		var ev AlertEvent
+		if err := conn.ReadJSON(&ev); err != nil {
+			t.Fatal(err)
+		}
+		if ev.Type != "event" || ev.ID != want || *ev.TripID != 1 {
+			t.Errorf("got %+v, want event %d", ev, want)
+		}
+	}
+
+	if got := readTick(t, dial(t, h)); got.Type != "tick" {
+		t.Errorf("new client got %+v, want the last tick only", got)
 	}
 }
 

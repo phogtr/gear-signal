@@ -77,12 +77,12 @@ func TestPolylinePointAt(t *testing.T) {
 	}
 }
 
-func TestPolylineDistanceTo(t *testing.T) {
-	pl, _ := NewPolyline([]Point{{0, 0}, {1, 0}})
+func TestDistanceToSegment(t *testing.T) {
+	a, b := Point{0, 0}, Point{1, 0}
 
-	near(t, "on the line", pl.DistanceTo(Point{0.5, 0}), 0, 1e-6)
-	near(t, "0.001° north of the line", pl.DistanceTo(Point{0.5, 0.001}), 0.001*metersPerDegree, 0.01)
-	near(t, "beyond the end", pl.DistanceTo(Point{1.001, 0}), 0.001*metersPerDegree, 0.01)
+	near(t, "on the segment", distanceToSegment(Point{0.5, 0}, a, b), 0, 1e-6)
+	near(t, "0.001° north of the segment", distanceToSegment(Point{0.5, 0.001}, a, b), 0.001*metersPerDegree, 0.01)
+	near(t, "beyond the end", distanceToSegment(Point{1.001, 0}, a, b), 0.001*metersPerDegree, 0.01)
 }
 
 func TestDoDouglasPeucker(t *testing.T) {

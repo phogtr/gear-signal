@@ -7,24 +7,27 @@ import (
 	"math/rand/v2"
 	"time"
 
+	"github.com/phogtr/gear-signal/internal/alert"
 	"github.com/phogtr/gear-signal/internal/geo"
 	"github.com/phogtr/gear-signal/internal/sim"
 	"github.com/phogtr/gear-signal/internal/store"
 )
 
 type Store interface {
-	ListRoutes(ctx context.Context) ([]store.Route, error)
-	ListTrips(ctx context.Context, f store.TripFilter) ([]store.Trip, error)
-	ListVehicles(ctx context.Context) ([]store.Vehicle, error)
-	StartTrip(ctx context.Context, vehicleID, routeID int64, startedAt time.Time) (int64, error)
-	ListScheduledReadyTrips(ctx context.Context, now time.Time) ([]store.Trip, error)
-	StartScheduledTrip(ctx context.Context, tripID int64, startedAt time.Time) (bool, error)
-	SetTripETA(ctx context.Context, tripID int64, eta time.Time) error
-	CompleteTrip(ctx context.Context, tripID int64, completedAt time.Time) error
+	ListRoutes(ctx context.Context) ([]store.Route, error)                                       // store/routes.go
+	ListTrips(ctx context.Context, f store.TripFilter) ([]store.Trip, error)                     // store/trips.go
+	ListVehicles(ctx context.Context) ([]store.Vehicle, error)                                   // store/vehicles.go
+	StartTrip(ctx context.Context, vehicleID, routeID int64, startedAt time.Time) (int64, error) // store/trips.go
+	ListScheduledReadyTrips(ctx context.Context, now time.Time) ([]store.Trip, error)            // store/trips.go
+	StartScheduledTrip(ctx context.Context, tripID int64, startedAt time.Time) (bool, error)     // store/trips.go
+	SetTripETA(ctx context.Context, tripID int64, eta time.Time) error                           // store/trips.go
+	CompleteTrip(ctx context.Context, tripID int64, completedAt time.Time) error                 // store/trips.go
+	InsertEvents(ctx context.Context, events []store.Event) error                                // store/events.go
 }
 
 type Sender interface {
-	Send(now time.Time, states []sim.State)
+	Send(now time.Time, states []sim.State) // ws/hub.go
+	SendEvents(events []store.Event)        // ws/hub.go
 }
 
 const directorInterval = 5 * time.Second
@@ -35,6 +38,7 @@ type Engine struct {
 	store          Store
 	writer         Sender
 	sim            *sim.Sim
+	alerts         *alert.Evaluator
 	demoTrips      int
 	routesByOrigin map[int64][]int64
 	vehicleTypes   map[int64]string
@@ -50,6 +54,7 @@ func New(ctx context.Context, st Store, writer Sender, multiplier float64, demoT
 	}
 
 	simRoutes := make([]sim.Route, len(routes))
+	lines := make(map[int64]*geo.Polyline, len(routes))
 	routesByOrigin := map[int64][]int64{}
 	for i, r := range routes {
 		routesByOrigin[r.OriginDepotID] = append(routesByOrigin[r.OriginDepotID], r.ID)
@@ -60,6 +65,9 @@ func New(ctx context.Context, st Store, writer Sender, multiplier float64, demoT
 			points[j] = geo.Point(c)
 		}
 		simRoutes[i] = sim.Route{ID: r.ID, Points: points, DurationS: r.DurationS}
+		if lines[r.ID], err = geo.NewPolyline(points); err != nil {
+			return nil, fmt.Errorf("route %d: %w", r.ID, err)
+		}
 	}
 
 	s, err := sim.New(simRoutes, multiplier)
@@ -96,6 +104,7 @@ func New(ctx context.Context, st Store, writer Sender, multiplier float64, demoT
 		store:          st,
 		writer:         writer,
 		sim:            s,
+		alerts:         alert.New(lines),
 		demoTrips:      demoTrips,
 		routesByOrigin: routesByOrigin,
 		vehicleTypes:   vehicleTypes,
@@ -137,10 +146,34 @@ func (e *Engine) step(ctx context.Context, now time.Time) []sim.State {
 		slog.Info("completed trip", "trip", st.TripID, "vehicle", st.VehicleID)
 	}
 
+	events := e.record(ctx, e.alerts.Eval(now, states))
+
 	if e.writer != nil {
 		e.writer.Send(now, states)
+		if len(events) > 0 {
+			e.writer.SendEvents(events)
+		}
 	}
 	return states
+}
+
+func (e *Engine) record(ctx context.Context, alerts []alert.Event) []store.Event {
+	if len(alerts) == 0 {
+		return nil
+	}
+	events := make([]store.Event, len(alerts))
+	for i, a := range alerts {
+		events[i] = store.Event{TripID: &a.TripID, VehicleID: a.VehicleID, Severity: a.Severity, Code: a.Code, Message: a.Message, TS: a.TS}
+	}
+
+	if err := e.store.InsertEvents(ctx, events); err != nil {
+		slog.Error("record alerts", "err", err)
+		return nil
+	}
+	for _, ev := range events {
+		slog.Info("alert", "severity", ev.Severity, "code", ev.Code, "trip", *ev.TripID, "vehicle", ev.VehicleID, "msg", ev.Message)
+	}
+	return events
 }
 
 // start scheduled ready/late trips. Vehicle not at

@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/phogtr/gear-signal/internal/sim"
+	"github.com/phogtr/gear-signal/internal/store"
 )
 
 const (
@@ -51,6 +52,28 @@ func (h *Hub) Send(now time.Time, states []sim.State) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.last = msg
+	h.broadcastLocked(msg)
+}
+
+func (h *Hub) SendEvents(events []store.Event) {
+	msgs := make([][]byte, 0, len(events))
+	for _, e := range events {
+		msg, err := json.Marshal(NewAlertEvent(e))
+		if err != nil {
+			slog.Error("ws: encode event", "err", err)
+			continue
+		}
+		msgs = append(msgs, msg)
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, msg := range msgs {
+		h.broadcastLocked(msg)
+	}
+}
+
+func (h *Hub) broadcastLocked(msg []byte) {
 	for c := range h.clients {
 		select {
 		case c.msgs <- msg:

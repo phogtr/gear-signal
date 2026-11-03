@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/phogtr/gear-signal/fixtures"
 	"github.com/phogtr/gear-signal/internal/geo"
+	"github.com/phogtr/gear-signal/internal/seed"
 	"github.com/phogtr/gear-signal/internal/sim"
 )
 
@@ -137,6 +139,27 @@ func TestRouteDeviation(t *testing.T) {
 	}
 }
 
+// a detour that lands on the way back of a loop is still off route
+func TestRouteDeviationOnLoopingRoute(t *testing.T) {
+	out := north[0]
+	back := geo.Destination(out, 90, 250).Lng()
+	loop, err := geo.NewPolyline([]geo.Point{out, north[1], {back, north[1].Lat()}, {back, out.Lat()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := New(map[int64]*geo.Polyline{1: loop})
+
+	s := onRoute(60)
+	p := geo.Destination(geo.Point{s.Lng, s.Lat}, 90, 250)
+	s.Lng, s.Lat = p.Lng(), p.Lat()
+	if d := geo.Distance(p, geo.Point{back, p.Lat()}); d > 1 {
+		t.Fatalf("test setup: %g m from the way back, want on it", d)
+	}
+	if got := codes(e.Eval(t0, []sim.State{s})); !slices.Equal(got, []string{"critical ROUTE_DEVIATION"}) {
+		t.Errorf("got %v", got)
+	}
+}
+
 func TestUnknownRouteSkipsDeviation(t *testing.T) {
 	e := newEvaluator(t)
 	s := onRoute(60)
@@ -177,50 +200,61 @@ func TestDoneForgetsRaisedAlerts(t *testing.T) {
 	}
 }
 
-// every simulated fault raises its alert once and clears it once, despite
-// the speed waves and engine temp noise around the thresholds
+// every simulated fault raises its alert once and clears it once on the real
+// LA routes, despite the speed waves, engine temp noise and winding roads
 func TestSimulatedFaults(t *testing.T) {
-	route := sim.Route{ID: 1, Points: north, DurationS: 900}
-	line, err := geo.NewPolyline(north)
+	_, routes, err := seed.Load(fixtures.FS)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	seen := map[string]int{}
-	for id := int64(1); id <= 200; id++ {
-		s, err := sim.New([]sim.Route{route}, 1)
+	trips := 0
+	for r, route := range routes {
+		line, err := geo.NewPolyline(route.Coordinates)
 		if err != nil {
 			t.Fatal(err)
 		}
-		vehicleType := sim.DieselTruck
-		if id%2 == 0 {
-			vehicleType = sim.EVVan
-		}
-		if _, err := s.Start(sim.Trip{ID: id, VehicleID: 1, VehicleType: vehicleType, RouteID: 1, StartedAt: t0}); err != nil {
-			t.Fatal(err)
-		}
+		simRoute := sim.Route{ID: 1, Points: route.Coordinates, DurationS: route.DurationS}
 
-		e := New(map[int64]*geo.Polyline{1: line})
-		var got []Event
-		for sec := 0; ; sec++ {
-			states := s.Tick(t0.Add(time.Duration(sec) * time.Second))
-			if len(states) == 0 {
-				break
+		for k := range 40 {
+			id := int64(r*1000 + k)
+			s, err := sim.New([]sim.Route{simRoute}, 20)
+			if err != nil {
+				t.Fatal(err)
 			}
-			got = append(got, e.Eval(t0, states)...)
-		}
+			vehicleType := sim.DieselTruck
+			if id%2 == 0 {
+				vehicleType = sim.EVVan
+			}
+			if _, err := s.Start(sim.Trip{ID: id, VehicleID: 1, VehicleType: vehicleType, RouteID: 1, StartedAt: t0}); err != nil {
+				t.Fatal(err)
+			}
+			trips++
 
-		switch {
-		case len(got) == 0:
-		case len(got) == 2 && got[0].Severity != Info && got[1].Severity == Info && got[0].Code == got[1].Code:
-			seen[got[0].Code]++
-		default:
-			t.Errorf("trip %d (%s): got %v, want nothing or one raise and its clear", id, vehicleType, codes(got))
+			e := New(map[int64]*geo.Polyline{1: line})
+			var got []Event
+			for sec := 0; ; sec++ {
+				states := s.Tick(t0.Add(time.Duration(sec) * time.Second))
+				if len(states) == 0 {
+					break
+				}
+				got = append(got, e.Eval(t0, states)...)
+			}
+
+			switch {
+			case len(got) == 0:
+			case len(got) == 2 && got[0].Severity != Info && got[1].Severity == Info && got[0].Code == got[1].Code:
+				seen[got[0].Code]++
+			default:
+				t.Errorf("%s trip %d (%s): got %v, want nothing or one raise and its clear", route.Name, id, vehicleType, codes(got))
+			}
 		}
 	}
-	// ~15% of trips have a fault: ~30 of 200
+
+	// ~15% of trips have a fault
 	faulty := seen[Speeding] + seen[Overheat] + seen[RouteDeviation]
-	if faulty < 15 || faulty > 50 || seen[Speeding] == 0 || seen[Overheat] == 0 || seen[RouteDeviation] == 0 {
-		t.Errorf("alerted trips by code %v, want ~30 covering all three faults", seen)
+	if want := trips * 15 / 100; faulty < want/2 || faulty > want*2 || seen[Speeding] == 0 || seen[Overheat] == 0 || seen[RouteDeviation] == 0 {
+		t.Errorf("alerted trips by code %v, want ~%d of %d covering all three faults", seen, want, trips)
 	}
 }

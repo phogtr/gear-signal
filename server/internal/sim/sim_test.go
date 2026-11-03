@@ -451,7 +451,8 @@ func TestDetour(t *testing.T) {
 	line := s.routes[3].line
 	off := func(sec float64) float64 {
 		st := s.Tick(t0.Add(time.Duration(sec * float64(time.Second))))[0]
-		return line.DistanceTo(geo.Point{st.Lng, st.Lat})
+		on, _ := line.PointAt(st.Distance)
+		return geo.Distance(geo.Point{st.Lng, st.Lat}, on)
 	}
 	near(t, "off the route before", off(a.fault.start-1), 0, 0.01)
 	near(t, "off the route on the plateau", off(plateau(a)), detourPeak, 1)
