@@ -1,6 +1,6 @@
 import type { Threshold } from "../lib/console";
 
-// server's alert thresholds
+// server's alert thresholds (internal/alert/alert.go)
 export const SPEED_LIMIT: Threshold = {
   value: 105,
   when: "above",
