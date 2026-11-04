@@ -36,3 +36,17 @@ func (s *Store) InsertEvents(ctx context.Context, events []Event) error {
 	}
 	return nil
 }
+
+// newest first
+func (s *Store) ListEvents(ctx context.Context, limit int) ([]Event, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, trip_id, vehicle_id, severity, code, message, ts
+		FROM events
+		ORDER BY id DESC
+		LIMIT $1`, limit)
+
+	if err != nil {
+		return nil, fmt.Errorf("query events: %w", err)
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[Event])
+}

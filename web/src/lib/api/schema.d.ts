@@ -119,6 +119,23 @@ export interface paths {
         patch: operations["updateTrip"];
         trace?: never;
     };
+    "/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Alert events, newest first. A raised alert has severity warning or critical; when it clears, an event with severity info and the same code follows. */
+        get: operations["listEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -231,6 +248,27 @@ export interface components {
              * @enum {string}
              */
             status: "cancelled";
+        };
+        /**
+         * @description info means an earlier alert with the same code cleared.
+         * @enum {string}
+         */
+        EventSeverity: "info" | "warning" | "critical";
+        /** @enum {string} */
+        EventCode: "SPEEDING" | "OVERHEAT" | "ROUTE_DEVIATION" | "BATTERY_LOW";
+        Event: {
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            tripId?: number;
+            /** Format: int64 */
+            vehicleId: number;
+            severity: components["schemas"]["EventSeverity"];
+            code: components["schemas"]["EventCode"];
+            /** @example Speeding at 118 km/h */
+            message: string;
+            /** Format: date-time */
+            ts: string;
         };
         Error: {
             message: string;
@@ -483,6 +521,38 @@ export interface operations {
             };
             /** @description Unsupported status change */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listEvents: {
+        parameters: {
+            query?: {
+                /** @description How many of the newest events to return (default 50). */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The newest events, newest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Event"][];
+                };
+            };
+            /** @description Invalid query parameter */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

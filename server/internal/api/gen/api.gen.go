@@ -16,6 +16,51 @@ import (
 	"github.com/oapi-codegen/runtime"
 )
 
+// Defines values for EventCode.
+const (
+	EventCodeBATTERYLOW     EventCode = "BATTERY_LOW"
+	EventCodeOVERHEAT       EventCode = "OVERHEAT"
+	EventCodeROUTEDEVIATION EventCode = "ROUTE_DEVIATION"
+	EventCodeSPEEDING       EventCode = "SPEEDING"
+)
+
+// Valid indicates whether the value is a known member of the EventCode enum.
+func (e EventCode) Valid() bool {
+	switch e {
+	case EventCodeBATTERYLOW:
+		return true
+	case EventCodeOVERHEAT:
+		return true
+	case EventCodeROUTEDEVIATION:
+		return true
+	case EventCodeSPEEDING:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for EventSeverity.
+const (
+	EventSeverityCritical EventSeverity = "critical"
+	EventSeverityInfo     EventSeverity = "info"
+	EventSeverityWarning  EventSeverity = "warning"
+)
+
+// Valid indicates whether the value is a known member of the EventSeverity enum.
+func (e EventSeverity) Valid() bool {
+	switch e {
+	case EventSeverityCritical:
+		return true
+	case EventSeverityInfo:
+		return true
+	case EventSeverityWarning:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TripPatchStatus.
 const (
 	TripPatchStatusCancelled TripPatchStatus = "cancelled"
@@ -140,6 +185,27 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// Event defines model for Event.
+type Event struct {
+	Code EventCode `json:"code"`
+	Id   int64     `json:"id"`
+
+	// Message Example: Speeding at 118 km/h
+	Message string `json:"message"`
+
+	// Severity info means an earlier alert with the same code cleared.
+	Severity  EventSeverity `json:"severity"`
+	TripId    *int64        `json:"tripId,omitempty"`
+	Ts        time.Time     `json:"ts"`
+	VehicleId int64         `json:"vehicleId"`
+}
+
+// EventCode defines model for EventCode.
+type EventCode string
+
+// EventSeverity info means an earlier alert with the same code cleared.
+type EventSeverity string
+
 // Health defines model for Health.
 type Health struct {
 	Db     string `json:"db"`
@@ -222,6 +288,12 @@ type VehicleStatus string
 // VehicleType defines model for VehicleType.
 type VehicleType string
 
+// ListEventsParams defines parameters for ListEvents.
+type ListEventsParams struct {
+	// Limit How many of the newest events to return (default 50).
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // ListTripsParams defines parameters for ListTrips.
 type ListTripsParams struct {
 	// Status Repeat to match any of several, e.g. ?status=completed&status=cancelled
@@ -243,6 +315,9 @@ type ServerInterface interface {
 
 	// (GET /depots)
 	ListDepots(w http.ResponseWriter, r *http.Request)
+
+	// (GET /events)
+	ListEvents(w http.ResponseWriter, r *http.Request, params ListEventsParams)
 
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -272,6 +347,11 @@ type Unimplemented struct{}
 
 // (GET /depots)
 func (_ Unimplemented) ListDepots(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /events)
+func (_ Unimplemented) ListEvents(w http.ResponseWriter, r *http.Request, params ListEventsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -324,6 +404,39 @@ func (siw *ServerInterfaceWrapper) ListDepots(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListDepots(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListEvents operation middleware
+func (siw *ServerInterfaceWrapper) ListEvents(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListEventsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListEvents(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -625,6 +738,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/trips/{id}", wrapper.UpdateTrip)
 	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/events", wrapper.ListEvents)
+	})
 
 	return r
 }
@@ -646,6 +762,42 @@ func (response ListDepots200JSONResponse) VisitListDepotsResponse(w http.Respons
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListEventsRequestObject struct {
+	Params ListEventsParams
+}
+
+type ListEventsResponseObject interface {
+	VisitListEventsResponse(w http.ResponseWriter) error
+}
+
+type ListEvents200JSONResponse []Event
+
+func (response ListEvents200JSONResponse) VisitListEventsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListEvents400JSONResponse Error
+
+func (response ListEvents400JSONResponse) VisitListEventsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -919,6 +1071,9 @@ type StrictServerInterface interface {
 	// (GET /depots)
 	ListDepots(ctx context.Context, request ListDepotsRequestObject) (ListDepotsResponseObject, error)
 
+	// (GET /events)
+	ListEvents(ctx context.Context, request ListEventsRequestObject) (ListEventsResponseObject, error)
+
 	// (GET /health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
 
@@ -997,6 +1152,32 @@ func (sh *strictHandler) ListDepots(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListDepotsResponseObject); ok {
 		if err := validResponse.VisitListDepotsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListEvents operation middleware
+func (sh *strictHandler) ListEvents(w http.ResponseWriter, r *http.Request, params ListEventsParams) {
+	var request ListEventsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListEvents(ctx, request.(ListEventsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListEvents")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListEventsResponseObject); ok {
+		if err := validResponse.VisitListEventsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

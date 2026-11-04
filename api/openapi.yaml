@@ -177,6 +177,32 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /events:
+    get:
+      operationId: listEvents
+      description: >
+        Alert events, newest first. A raised alert has severity warning or critical; when it
+        clears, an event with severity info and the same code follows.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: How many of the newest events to return (default 50).
+          schema: { type: integer, minimum: 1, maximum: 200 }
+      responses:
+        "200":
+          description: The newest events, newest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Event" }
+        "400":
+          description: Invalid query parameter
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
 components:
   schemas:
     Health:
@@ -307,6 +333,27 @@ components:
           description: The only supported change is scheduled -> cancelled.
           type: string
           enum: [cancelled]
+
+    EventSeverity:
+      description: info means an earlier alert with the same code cleared.
+      type: string
+      enum: [info, warning, critical]
+
+    EventCode:
+      type: string
+      enum: [SPEEDING, OVERHEAT, ROUTE_DEVIATION, BATTERY_LOW]
+
+    Event:
+      type: object
+      required: [id, vehicleId, severity, code, message, ts]
+      properties:
+        id: { type: integer, format: int64 }
+        tripId: { type: integer, format: int64 }
+        vehicleId: { type: integer, format: int64 }
+        severity: { $ref: "#/components/schemas/EventSeverity" }
+        code: { $ref: "#/components/schemas/EventCode" }
+        message: { type: string, example: Speeding at 118 km/h }
+        ts: { type: string, format: date-time }
 
     Error:
       type: object
