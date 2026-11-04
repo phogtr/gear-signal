@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import { EVENT_CAP } from "../events";
+
 import type { AlertEvent, Tick, VehicleState } from "./types";
 
 export type SocketStatus = "connecting" | "live" | "offline";
@@ -15,6 +17,7 @@ interface SocketState {
   vehicles: VehicleState[];
   completed: Record<number, Completed>;
   ts: string | null; // last tick's server time
+  events: AlertEvent[]; // newest first
 }
 
 export const useSocketStore = create<SocketState>(() => ({
@@ -22,13 +25,23 @@ export const useSocketStore = create<SocketState>(() => ({
   vehicles: [],
   completed: {},
   ts: null,
+  events: [],
 }));
 
-export const connectSocket = (url: string, onTripsChanged: () => void) => {
+interface Callbacks {
+  onTripsChanged: () => void;
+  onReconnect: () => void;
+}
+
+export const connectSocket = (
+  url: string,
+  { onTripsChanged, onReconnect }: Callbacks,
+) => {
   let ws: WebSocket | null = null;
   let retry: ReturnType<typeof setTimeout> | undefined;
   let attempt = 0;
   let stopped = false;
+  let hasOpened = false;
 
   const open = () => {
     useSocketStore.setState({ status: "connecting" });
@@ -37,11 +50,16 @@ export const connectSocket = (url: string, onTripsChanged: () => void) => {
     ws.onopen = () => {
       attempt = 0;
       useSocketStore.setState({ status: "live" });
+      if (hasOpened) onReconnect();
+      hasOpened = true;
     };
 
     ws.onmessage = (e: MessageEvent<string>) => {
       const msg = JSON.parse(e.data) as Tick | AlertEvent;
-      if (msg.type !== "tick") return; // events aren't used yet
+      if (msg.type === "event") {
+        useSocketStore.setState((s) => ({ events: applyEvent(s.events, msg) }));
+        return;
+      }
 
       const tick = msg;
       const prev = useSocketStore.getState();
@@ -100,6 +118,11 @@ export const applyCompleted = (
   return next;
 };
 
-// 1 s, 2 s, 4 s ... capped at 30 s
+export const applyEvent = (
+  prev: AlertEvent[],
+  event: AlertEvent,
+): AlertEvent[] => [event, ...prev].slice(0, EVENT_CAP);
+
+// 1s, 2s, 4s ... capped at 30s
 export const backoff = (attempt: number): number =>
   Math.min(1000 * 2 ** attempt, 30_000);

@@ -8,6 +8,7 @@ import {
 import { api, type NewTrip, type Route, type TripSource } from "./client";
 
 export const RECENT_TRIPS_LIMIT = 20;
+export const EVENT_HISTORY_LIMIT = 50;
 
 // depots & routes only change when database re-seeded, so they never go stale
 export const useDepots = () => {
@@ -85,6 +86,19 @@ export const useRecentTrips = (source?: TripSource) => {
     },
     // keep old rows while switching filters instead of flashing empty table
     placeholderData: keepPreviousData,
+  });
+};
+
+// history only; new events are from useSocketStore
+export const useEvents = () => {
+  return useQuery({
+    queryKey: ["events"],
+    queryFn: async () => {
+      const { data, response } = await api.GET("/events", {
+        params: { query: { limit: EVENT_HISTORY_LIMIT } },
+      });
+      return isOk(data, response, "GET /events");
+    },
   });
 };
 

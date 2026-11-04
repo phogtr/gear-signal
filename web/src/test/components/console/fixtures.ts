@@ -1,5 +1,5 @@
 import type { Depot, Route, Vehicle } from "../../../lib/api/client";
-import type { VehicleState } from "../../../lib/ws/types";
+import type { AlertEvent, VehicleState } from "../../../lib/ws/types";
 
 export const depots: Depot[] = [
   { id: 1, name: "DTLA Warehouse", lat: 34, lon: -118 },
@@ -47,5 +47,21 @@ export const live = (
   progress: 0.25,
   done: false,
   battery: 0.7,
+  ...fields,
+});
+
+export const alert = (
+  id: number,
+  vehicleId: number,
+  fields: Partial<AlertEvent> = {},
+): AlertEvent => ({
+  type: "event",
+  id,
+  tripId: vehicleId * 10,
+  vehicleId,
+  severity: "warning",
+  code: "SPEEDING",
+  message: "Speeding at 118 km/h",
+  ts: "2026-11-03T16:52:07Z",
   ...fields,
 });

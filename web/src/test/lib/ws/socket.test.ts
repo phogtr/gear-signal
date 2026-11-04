@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { applyCompleted, applyTick, backoff } from "../../../lib/ws/socket";
-import type { Tick, VehicleState } from "../../../lib/ws/types";
+import { EVENT_CAP } from "../../../lib/events";
+import {
+  applyCompleted,
+  applyEvent,
+  applyTick,
+  backoff,
+} from "../../../lib/ws/socket";
+import type { AlertEvent, Tick, VehicleState } from "../../../lib/ws/types";
 
 const state = (vehicleId: number, done = false): VehicleState => ({
   vehicleId,
@@ -75,6 +81,28 @@ describe("applyCompleted", () => {
       2: { at: "2026-10-13T09:00:00Z", state: state(2, true) },
     });
     expect(old).not.toHaveProperty("2");
+  });
+});
+
+describe("applyEvent", () => {
+  const ev = (id: number): AlertEvent => ({
+    type: "event",
+    id,
+    vehicleId: 7,
+    severity: "critical",
+    code: "OVERHEAT",
+    message: "Engine overheating at 106.2 °C",
+    ts: "2026-11-03T16:52:07Z",
+  });
+
+  it("puts the new event first and keeps at most EVENT_CAP", () => {
+    expect(applyEvent([ev(1)], ev(2)).map((e) => e.id)).toEqual([2, 1]);
+
+    const full = Array.from({ length: EVENT_CAP }, (_, i) => ev(EVENT_CAP - i));
+    const next = applyEvent(full, ev(EVENT_CAP + 1));
+    expect(next).toHaveLength(EVENT_CAP);
+    expect(next[0].id).toBe(EVENT_CAP + 1);
+    expect(next.at(-1)!.id).toBe(2);
   });
 });
 

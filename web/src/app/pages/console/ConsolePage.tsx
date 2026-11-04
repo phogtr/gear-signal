@@ -1,12 +1,14 @@
 import { useSearchParams } from "react-router";
 
 import { ActiveVehiclePicker } from "../../../components/console/ActiveVehiclePicker";
+import { EventLog } from "../../../components/console/EventLog";
 import { TelemetryPanel } from "../../../components/console/TelemetryPanel";
 import { SocketStatus } from "../../../components/map/SocketStatus";
 
 import {
   useActiveTrips,
   useDepots,
+  useEvents,
   useRoutes,
   useVehicles,
 } from "../../../lib/api/queries";
@@ -23,6 +25,7 @@ export const ConsolePage = () => {
   const depots = useDepots();
   const routes = useRoutes();
   const trips = useActiveTrips();
+  const events = useEvents();
 
   const error = vehicles.error ?? depots.error ?? routes.error ?? trips.error;
   // rows wait for names, so they never flash "No vehicles"
@@ -48,7 +51,7 @@ export const ConsolePage = () => {
       )}
 
       {isReady && (
-        <div className="grid gap-4 md:grid-cols-[16rem_1fr] md:items-start">
+        <div className="grid gap-4 md:grid-cols-[16rem_1fr] md:items-start xl:grid-cols-[16rem_1fr_20rem]">
           <ActiveVehiclePicker
             vehicles={vehicles.data!}
             depots={depots.data!}
@@ -72,6 +75,13 @@ export const ConsolePage = () => {
                 : `No vehicle with id ${selectedId}`}
             </p>
           )}
+
+          <EventLog
+            history={events.data}
+            isHistoryError={events.isError}
+            vehicles={vehicles.data!}
+            selectedId={selectedId}
+          />
         </div>
       )}
     </div>

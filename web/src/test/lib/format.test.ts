@@ -4,6 +4,7 @@ import type { Depot, Route } from "../../lib/api/client";
 import {
   formatClock,
   formatCountdown,
+  formatTime,
   formatWhen,
   routeLabel,
 } from "../../lib/format";
@@ -75,6 +76,20 @@ describe("formatWhen", () => {
     const day = new Intl.DateTimeFormat([], { month: "short", day: "numeric" });
     expect(formatWhen(yesterday, now)).toBe(
       `${day.format(yesterday)}, ${formatClock(yesterday)}`,
+    );
+  });
+});
+
+describe("formatTime", () => {
+  it("includes seconds", () => {
+    const t = new Date(2026, 10, 3, 16, 52, 7);
+    expect(formatTime(t)).toMatch(/52:07/);
+    expect(formatTime(t)).toBe(
+      new Intl.DateTimeFormat([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }).format(t),
     );
   });
 });

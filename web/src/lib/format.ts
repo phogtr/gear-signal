@@ -10,6 +10,12 @@ const clockFormat = new Intl.DateTimeFormat([], {
   minute: "2-digit",
 });
 
+const timeFormat = new Intl.DateTimeFormat([], {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+});
+
 const dayFormat = new Intl.DateTimeFormat([], {
   month: "short",
   day: "numeric",
@@ -18,6 +24,10 @@ const dayFormat = new Intl.DateTimeFormat([], {
 // "16:52" in browser's time zone
 export const formatClock = (time: string | number | Date): string =>
   clockFormat.format(new Date(time));
+
+// "16:52:07", for event log timestamps
+export const formatTime = (time: string | number | Date): string =>
+  timeFormat.format(new Date(time));
 
 // clock alone for today, "Oct 17, 16:52" for any other day
 export const formatWhen = (

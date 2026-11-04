@@ -12,3 +12,4 @@ export type Trip = Schemas["Trip"];
 export type TripSource = Schemas["TripSource"];
 export type NewTrip = Schemas["NewTrip"];
 export type Availability = Schemas["Availability"];
+export type EventRecord = Schemas["Event"];

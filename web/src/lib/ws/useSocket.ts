@@ -8,17 +8,23 @@ const socketUrl = () => {
   return `${scheme}://${location.host}/api/ws`;
 };
 
-// streams vehicles into useSocketStore, and
-// refetch parked vehicles, active trips whenever a trip starts/finishes
+// stream vehicles & events into useSocketStore, &
+// refetch parked vehicles, active trips whenever a trip start/finish
 export const useSocket = () => {
   const queryClient = useQueryClient();
 
-  useEffect(
-    () =>
-      connectSocket(socketUrl(), () => {
-        queryClient.invalidateQueries({ queryKey: ["vehicles"] });
-        queryClient.invalidateQueries({ queryKey: ["trips"] });
-      }),
-    [queryClient],
-  );
+  useEffect(() => {
+    const refetchTrips = () => {
+      queryClient.invalidateQueries({ queryKey: ["vehicles"] });
+      queryClient.invalidateQueries({ queryKey: ["trips"] });
+    };
+
+    return connectSocket(socketUrl(), {
+      onTripsChanged: refetchTrips,
+      onReconnect: () => {
+        refetchTrips();
+        queryClient.invalidateQueries({ queryKey: ["events"] });
+      },
+    });
+  }, [queryClient]);
 };
