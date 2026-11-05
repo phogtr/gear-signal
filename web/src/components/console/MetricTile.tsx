@@ -1,18 +1,26 @@
 import { useId } from "react";
 
+import { SeverityLabel } from "./Severity";
+
 import {
   gaugeFraction,
   gaugeText,
   type Gauge,
   type Metric,
 } from "../../lib/console";
+import type { AlertSeverity } from "../../lib/events";
 
 const SEVERITY_CLASS = {
   warning: "bg-warning/35",
   critical: "bg-danger/35",
 } as const;
 
-export const MetricTile = ({ metric }: { metric: Metric }) => {
+interface Props {
+  metric: Metric;
+  severity?: AlertSeverity;
+}
+
+export const MetricTile = ({ metric, severity }: Props) => {
   const labelId = useId();
 
   const { gauge } = metric;
@@ -32,11 +40,17 @@ export const MetricTile = ({ metric }: { metric: Metric }) => {
 
   return (
     <div className="flex flex-col gap-1 p-3 rounded-md border border-border">
-      <dt
-        id={labelId}
-        className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase"
-      >
-        {metric.label}
+      <dt id={labelId} className="flex items-center justify-between gap-2">
+        <span className="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">
+          {metric.label}
+        </span>
+        {/* Speed Warning, not SpeedWarning */}
+        {severity && " "}
+        {severity && (
+          <span className="text-[11px]">
+            <SeverityLabel severity={severity} isText={false} />
+          </span>
+        )}
       </dt>
       <dd>
         {gauge ? (

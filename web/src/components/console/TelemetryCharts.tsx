@@ -2,6 +2,8 @@ import { useEffect, useRef } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
+import { SeverityLabel } from "./Severity";
+
 import { useSocketStore } from "../../lib/ws/socket";
 import { makeHistory } from "../../lib/history";
 import {
@@ -13,6 +15,7 @@ import {
 } from "../../lib/console";
 import { themeColor } from "../../lib/theme";
 
+import type { AlertSeverity } from "../../lib/events";
 import type { VehicleState } from "../../lib/ws/types";
 
 const WINDOW_S = 60;
@@ -23,10 +26,16 @@ const FONT = `${10 * uPlot.pxRatio}px "Fira Code Variable", monospace`;
 interface Props {
   vehicleId: number;
   data: Metric[];
+  alerts: Map<string, AlertSeverity>; // by metric label
   startedAt?: string;
 }
 
-export const TelemetryCharts = ({ vehicleId, data, startedAt }: Props) => {
+export const TelemetryCharts = ({
+  vehicleId,
+  data,
+  alerts,
+  startedAt,
+}: Props) => {
   const plots = useRef<(HTMLDivElement | null)[]>([]);
   const hoverCaption = useRef<(HTMLSpanElement | null)[]>([]);
   const departure = useRef<number | null>(null);
@@ -235,35 +244,43 @@ export const TelemetryCharts = ({ vehicleId, data, startedAt }: Props) => {
   return (
     <section aria-labelledby="trends-heading" className="mt-4">
       <div className="mt-2 grid gap-2">
-        {data.map((m, i) => (
-          <figure
-            key={m.label}
-            className="min-w-0 p-3 rounded-md border border-border"
-          >
-            <figcaption className="flex items-baseline justify-between gap-2 text-xs">
-              <span>
-                <span className="font-semibold">{m.label}</span>{" "}
-                <span className="text-muted-foreground">{m.unit}</span>
-              </span>
-              <span
-                aria-hidden="true"
-                ref={(el) => {
-                  hoverCaption.current[i] = el;
-                }}
-                className="font-mono text-muted-foreground tabular-nums"
-              />
-            </figcaption>
+        {data.map((m, i) => {
+          const severity = alerts.get(m.label);
+          return (
+            <figure
+              key={m.label}
+              className="min-w-0 p-3 rounded-md border border-border"
+            >
+              <figcaption className="flex items-center justify-between gap-2 text-xs">
+                <span>
+                  <span className="font-semibold">{m.label}</span>{" "}
+                  <span className="text-muted-foreground">{m.unit}</span>
+                </span>
+                <span className="flex items-center gap-2">
+                  <span
+                    aria-hidden="true"
+                    ref={(el) => {
+                      hoverCaption.current[i] = el;
+                    }}
+                    className="font-mono text-muted-foreground tabular-nums"
+                  />
+                  {severity && (
+                    <SeverityLabel severity={severity} isText={false} />
+                  )}
+                </span>
+              </figcaption>
 
-            <div
-              ref={(el) => {
-                plots.current[i] = el;
-              }}
-              role="img"
-              aria-label={`${m.label}: waiting for data`}
-              className="mt-1"
-            />
-          </figure>
-        ))}
+              <div
+                ref={(el) => {
+                  plots.current[i] = el;
+                }}
+                role="img"
+                aria-label={`${m.label}: waiting for data`}
+                className="mt-1"
+              />
+            </figure>
+          );
+        })}
       </div>
     </section>
   );

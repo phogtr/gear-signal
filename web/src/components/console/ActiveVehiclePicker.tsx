@@ -1,11 +1,13 @@
 import { Link } from "react-router";
 
 import { PlannedBadge } from "../schedule/TripCells";
+import { SeverityLabel } from "./Severity";
 
 import { useSocketStore } from "../../lib/ws/socket";
 import { routeLabel } from "../../lib/format";
-import { VEHICLE_TYPE_LABELS } from "../../constants/map";
+import { getSeverity, type ActiveAlert } from "../../lib/events";
 
+import { VEHICLE_TYPE_LABELS } from "../../constants/map";
 import type { Depot, Route, Trip, Vehicle } from "../../lib/api/client";
 
 interface Props {
@@ -13,6 +15,7 @@ interface Props {
   depots: Depot[];
   routes: Route[];
   trips: Trip[];
+  alerts: Map<number, ActiveAlert[]>; // by trip id
   selectedId: number | null;
 }
 
@@ -23,6 +26,7 @@ export const ActiveVehiclePicker = ({
   depots,
   routes,
   trips,
+  alerts,
   selectedId,
 }: Props) => {
   const states = useSocketStore((s) => s.vehicles);
@@ -60,6 +64,7 @@ export const ActiveVehiclePicker = ({
           const where = route ? routeLabel(route, depots) : "—";
           const percent = Math.round(state.progress * 100);
           const isSelected = vehicle.id === selectedId;
+          const severity = getSeverity(alerts.get(state.tripId));
 
           return (
             <li
@@ -76,11 +81,14 @@ export const ActiveVehiclePicker = ({
               >
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold">{vehicle.name}</span>
-                  <span className="text-muted-foreground">
+                  <span className="min-w-0 truncate text-muted-foreground">
                     {VEHICLE_TYPE_LABELS[vehicle.type]}
                   </span>
                   {tripById.get(state.tripId)?.source === "planned" && (
                     <PlannedBadge />
+                  )}
+                  {severity && (
+                    <SeverityLabel severity={severity} isText={false} />
                   )}
                   <span className="ml-auto font-mono tabular-nums">
                     {percent}%

@@ -1,58 +1,29 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Link } from "react-router";
 
-import { CircleCheckIcon } from "../../icons/CircleCheckIcon";
-import { InfoIcon } from "../../icons/InfoIcon";
-import { SquareExclamationIcon } from "../../icons/SquareExclamationIcon";
+import { SeverityLabel } from "./Severity";
 
-import { useSocketStore } from "../../lib/ws/socket";
-import { mergeEvents } from "../../lib/events";
 import { formatTime } from "../../lib/format";
 
 import type { EventRecord, Vehicle } from "../../lib/api/client";
 
-const SEVERITY: Record<
-  EventRecord["severity"],
-  { label: string; icon: ReactNode; className: string }
-> = {
-  critical: {
-    label: "Critical",
-    icon: <SquareExclamationIcon />,
-    className: "text-danger",
-  },
-  warning: {
-    label: "Warning",
-    icon: <InfoIcon />,
-    className: "text-warning",
-  },
-  info: {
-    label: "Cleared",
-    icon: <CircleCheckIcon />,
-    className: "text-muted-foreground",
-  },
-};
-
 interface Props {
-  history: EventRecord[] | undefined;
+  events: EventRecord[]; // history + live, newest first
+  isLoading: boolean;
   isHistoryError: boolean;
   vehicles: Vehicle[];
   selectedId: number | null;
 }
 
 export const EventLog = ({
-  history,
+  events,
+  isLoading,
   isHistoryError,
   vehicles,
   selectedId,
 }: Props) => {
-  const live = useSocketStore((s) => s.events);
-
   const [onlySelected, setOnlySelected] = useState(false);
 
-  const events = useMemo(
-    () => mergeEvents(history ?? [], live),
-    [history, live],
-  );
   const nameById = new Map(vehicles.map((v) => [v.id, v.name]));
   const selectedName =
     selectedId === null ? undefined : nameById.get(selectedId);
@@ -103,21 +74,13 @@ export const EventLog = ({
 
       <ol className="max-h-96 min-h-0 overflow-y-auto xl:max-h-none xl:flex-1">
         {rows.map((e) => {
-          const severity = SEVERITY[e.severity];
           return (
             <li
               key={e.id}
               className="px-3 py-2 border-b border-border text-xs last:border-b-0"
             >
               <div className="flex items-center gap-2">
-                <span
-                  className={`flex items-center gap-1 font-semibold ${severity.className}`}
-                >
-                  <span aria-hidden="true" className="flex [&>svg]:size-3.5">
-                    {severity.icon}
-                  </span>
-                  {severity.label}
-                </span>
+                <SeverityLabel severity={e.severity} />
 
                 <Link
                   to={`?vehicle=${e.vehicleId}`}
@@ -140,7 +103,7 @@ export const EventLog = ({
 
         {rows.length === 0 && (
           <li className="px-3 py-6 text-center text-xs text-muted-foreground">
-            {history === undefined && !isHistoryError
+            {isLoading
               ? "Loading events"
               : isFiltered
                 ? `No events for ${selectedName}`

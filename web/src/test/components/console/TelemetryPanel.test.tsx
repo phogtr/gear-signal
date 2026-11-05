@@ -1,33 +1,49 @@
 // @vitest-environment jsdom
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TelemetryPanel } from "../../../components/console/TelemetryPanel";
 import { useSocketStore } from "../../../lib/ws/socket";
 import type { Trip, Vehicle } from "../../../lib/api/client";
+import type { ActiveAlert } from "../../../lib/events";
 import { depots, live, routes, vehicle } from "./fixtures";
 
 // uPlot needs canvas and matchMedia, which jsdom lacks; charts are checked in the browser
 vi.mock("../../../components/console/TelemetryCharts", () => ({
-  TelemetryCharts: ({ data }: { data: { label: string }[] }) => (
-    <p>charts: {data.map((m) => m.label).join(", ")}</p>
+  TelemetryCharts: ({
+    data,
+    alerts,
+  }: {
+    data: { label: string }[];
+    alerts: Map<string, string>;
+  }) => (
+    <p>
+      charts: {data.map((m) => m.label).join(", ")}
+      {alerts.size > 0 && `; alerts: ${[...alerts].join(" ")}`}
+    </p>
   ),
 }));
 
 const van = vehicle(5, "VAN-05");
 const truck = vehicle(7, "TRK-07", { type: "diesel_truck" });
 
-const renderPanel = (v: Vehicle, trips: Trip[] = []) =>
+const renderPanel = (
+  v: Vehicle,
+  trips: Trip[] = [],
+  alerts = new Map<number, ActiveAlert[]>(),
+) =>
   render(
     <TelemetryPanel
       vehicle={v}
       depots={depots}
       routes={routes}
       trips={trips}
+      alerts={alerts}
     />,
   );
 
-const value = (label: string) => screen.getByText(label).nextElementSibling;
+const value = (label: string) =>
+  screen.getByText(label).closest("dt")!.nextElementSibling;
 
 beforeEach(() =>
   useSocketStore.setState({ status: "live", vehicles: [], completed: {} }),
@@ -112,6 +128,93 @@ describe("TelemetryPanel", () => {
     expect(value("Battery")).toHaveTextContent("55.0%");
     expect(value("Progress")).toHaveTextContent("100%");
     expect(value("Arrived")).toBeInTheDocument();
+  });
+
+  it("lists the trip's raised alerts and marks their tiles and charts", () => {
+    useSocketStore.setState({
+      vehicles: [live(7, { battery: undefined, fuel: 0.42, engineTemp: 107 })],
+    });
+    renderPanel(
+      truck,
+      [],
+      new Map([
+        [
+          70,
+          [
+            {
+              code: "OVERHEAT",
+              severity: "critical",
+              message: "Engine overheating at 106.2 °C",
+            },
+            {
+              code: "ROUTE_DEVIATION",
+              severity: "critical",
+              message: "Off route by 201 m",
+            },
+            {
+              code: "SPEEDING",
+              severity: "warning",
+              message: "Speeding at 118 km/h",
+            },
+          ],
+        ],
+      ]),
+    );
+
+    const list = screen.getByRole("list", { name: "Active alerts" });
+    expect(
+      within(list)
+        .getAllByRole("listitem")
+        .map((li) => li.textContent),
+    ).toEqual([
+      "CriticalEngine overheating at 106.2 °C",
+      "CriticalOff route by 201 m",
+      "WarningSpeeding at 118 km/h",
+    ]);
+    expect(
+      screen.getByRole("meter", { name: "Engine temp Critical" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("meter", { name: "Speed Warning" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("meter", { name: "Fuel" })).toBeInTheDocument();
+    expect(
+      screen.getByText(/alerts: Engine temp,critical Speed,warning$/),
+    ).toBeInTheDocument();
+  });
+
+  it("ignores alerts of a finished trip", () => {
+    useSocketStore.setState({
+      vehicles: [],
+      completed: {
+        5: {
+          at: "2026-10-27T16:40:00Z",
+          state: live(5, { done: true, battery: 0.1 }),
+        },
+      },
+    });
+    renderPanel(
+      van,
+      [],
+      new Map([
+        [
+          50,
+          [
+            {
+              code: "BATTERY_LOW",
+              severity: "warning",
+              message: "Battery low at 19%",
+            },
+          ],
+        ],
+      ]),
+    );
+
+    expect(screen.getByText("Trip completed")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("list", { name: "Active alerts" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("meter", { name: "Battery" })).toBeInTheDocument();
   });
 
   it("explains when the vehicle isn't on a trip", () => {

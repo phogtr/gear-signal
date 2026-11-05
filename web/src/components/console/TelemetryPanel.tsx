@@ -4,12 +4,16 @@ import { PlannedBadge } from "../schedule/TripCells";
 import { StatusIcon } from "../map/StatusIcon";
 import { MetricTile } from "./MetricTile";
 import { TelemetryCharts } from "./TelemetryCharts";
+import { SeverityLabel } from "./Severity";
 
 import { useSocketStore } from "../../lib/ws/socket";
 import { useNow } from "../../lib/useNow";
 import { metrics, type Metric } from "../../lib/console";
 import { formatClock, formatCountdown, routeLabel } from "../../lib/format";
+import type { ActiveAlert, AlertSeverity } from "../../lib/events";
+
 import { VEHICLE_STATUSES, VEHICLE_TYPE_LABELS } from "../../constants/map";
+import { ALERT_METRIC } from "../../constants/console";
 
 import type { Depot, Route, Trip, Vehicle } from "../../lib/api/client";
 
@@ -18,9 +22,16 @@ interface Props {
   depots: Depot[];
   routes: Route[];
   trips: Trip[];
+  alerts: Map<number, ActiveAlert[]>; // by trip id
 }
 
-export const TelemetryPanel = ({ vehicle, depots, routes, trips }: Props) => {
+export const TelemetryPanel = ({
+  vehicle,
+  depots,
+  routes,
+  trips,
+  alerts,
+}: Props) => {
   const live = useSocketStore((s) =>
     s.vehicles.find((v) => v.vehicleId === vehicle.id),
   );
@@ -73,6 +84,14 @@ export const TelemetryPanel = ({ vehicle, depots, routes, trips }: Props) => {
     );
   }
 
+  // only running trip, finished one may keep a BATTERY_LOW forever
+  const alerted = (live && alerts.get(live.tripId)) || [];
+  const alertByLabel = new Map<string, AlertSeverity>();
+  for (const a of alerted) {
+    const label = ALERT_METRIC[a.code];
+    if (label) alertByLabel.set(label, a.severity);
+  }
+
   const rows: Metric[] = metrics(state, route.distance);
   if (live && trip?.eta) {
     const eta = new Date(trip.eta);
@@ -103,15 +122,34 @@ export const TelemetryPanel = ({ vehicle, depots, routes, trips }: Props) => {
         />
       </div>
 
+      {alerted.length > 0 && (
+        <ul
+          aria-label="Active alerts"
+          className="mt-4 rounded-md border border-border divide-y divide-border text-xs"
+        >
+          {alerted.map((a) => (
+            <li key={a.code} className="px-3 py-2 flex items-center gap-2">
+              <SeverityLabel severity={a.severity} />
+              <span>{a.message}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
       <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
         {rows.map((r) => (
-          <MetricTile key={r.label} metric={r} />
+          <MetricTile
+            key={r.label}
+            metric={r}
+            severity={alertByLabel.get(r.label)}
+          />
         ))}
       </dl>
 
       <TelemetryCharts
         vehicleId={vehicle.id}
         data={rows.filter((r) => r.gauge)}
+        alerts={alertByLabel}
         startedAt={trip?.startedAt}
       />
     </Panel>

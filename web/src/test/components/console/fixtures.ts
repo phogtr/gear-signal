@@ -1,4 +1,9 @@
-import type { Depot, Route, Vehicle } from "../../../lib/api/client";
+import type {
+  Depot,
+  EventRecord,
+  Route,
+  Vehicle,
+} from "../../../lib/api/client";
 import type { AlertEvent, VehicleState } from "../../../lib/ws/types";
 
 export const depots: Depot[] = [
@@ -65,3 +70,9 @@ export const alert = (
   ts: "2026-11-03T16:52:07Z",
   ...fields,
 });
+
+// the same event as GET /events returns it
+export const record = (...args: Parameters<typeof alert>): EventRecord => {
+  const { type: _, ...rest } = alert(...args);
+  return rest;
+};
