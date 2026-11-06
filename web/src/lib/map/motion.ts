@@ -10,7 +10,10 @@ export interface MovingVehicle {
 
 interface Sample {
   distance: number;
-  now: number; // ms, performance.now() when the tick arrived
+  lng: number;
+  lat: number;
+  now: number; // ms, performance.now() when the tick arrive
+  offset?: [dLng: number, dLat: number];
 }
 
 interface Track {
@@ -21,8 +24,8 @@ interface Track {
 
 const TICK_MS = 1000;
 
-// interpolating vehicle between its last two known distances along the route.
-// Drawing one tick behind the server
+// interpolate vehicle between last two known distance along the route,
+// plus sideways offset. Drawing one tick behind the server
 export const makeMotion = () => {
   const tracks = new Map<number, Track>();
 
@@ -36,7 +39,7 @@ export const makeMotion = () => {
 
       tracks.set(v.vehicleId, {
         state: v,
-        prev: { distance: v.distance, now },
+        prev: { distance: v.distance, lng: v.lng, lat: v.lat, now },
         pen: isSameTrip ? old.prev : undefined,
       });
     }
@@ -52,20 +55,40 @@ export const makeMotion = () => {
     isMotion = true,
   ): MovingVehicle[] =>
     [...tracks.values()].map(({ state, prev, pen }) => {
-      let distance = prev.distance;
-      if (isMotion && pen) {
-        const interval = prev.now - pen.now || TICK_MS;
-        const t = Math.min(Math.max((now - prev.now) / interval, 0), 1);
-        distance = pen.distance + (prev.distance - pen.distance) * t; // lerp
+      const route = routes.get(state.routeId);
+      // not loaded yet
+      if (!route) {
+        const { vehicleId, lng, lat, degree } = state;
+        return { vehicleId, lng, lat, degree };
       }
 
-      const route = routes.get(state.routeId);
-      // routes not loaded yet: fall back to server's reported position
-      const p = route
-        ? route.pointAt(distance)
-        : { lng: state.lng, lat: state.lat, degree: state.degree };
-      return { vehicleId: state.vehicleId, ...p };
+      let t = 1; // 0 = at pen, 1 = at prev
+      if (isMotion && pen) {
+        const interval = prev.now - pen.now || TICK_MS;
+        t = Math.min(Math.max((now - prev.now) / interval, 0), 1);
+      }
+      const from = pen && t < 1 ? pen : prev;
+      const lerp = (a: number, b: number) => a + (b - a) * t;
+
+      const p = route.pointAt(lerp(from.distance, prev.distance));
+      const [fromLng, fromLat] = offsetOf(from, route);
+      const [toLng, toLat] = offsetOf(prev, route);
+      return {
+        vehicleId: state.vehicleId,
+        lng: p.lng + lerp(fromLng, toLng),
+        lat: p.lat + lerp(fromLat, toLat),
+        degree: p.degree,
+      };
     });
 
   return { update, positions, size: () => tracks.size };
+};
+
+const offsetOf = (s: Sample, route: Polyline): [number, number] => {
+  if (!s.offset) {
+    const on = route.pointAt(s.distance);
+    // s.lng/lat include fault detour; on.lng/lat is not
+    s.offset = [s.lng - on.lng, s.lat - on.lat];
+  }
+  return s.offset;
 };
