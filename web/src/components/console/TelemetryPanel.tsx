@@ -149,7 +149,7 @@ export const TelemetryPanel = ({
       <TelemetryCharts
         vehicleId={vehicle.id}
         data={rows.filter((r) => r.gauge)}
-        alerts={alertByLabel}
+        alertByLabel={alertByLabel}
         startedAt={trip?.startedAt}
       />
     </Panel>

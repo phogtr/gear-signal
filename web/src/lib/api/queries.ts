@@ -102,6 +102,19 @@ export const useEvents = () => {
   });
 };
 
+// charts merge result outside React & never want cached copy
+export const fetchTripTelemetry = async (
+  tripId: number,
+  limit: number,
+  signal: AbortSignal,
+) => {
+  const { data, response } = await api.GET("/trips/{id}/telemetry", {
+    params: { path: { id: tripId }, query: { limit } },
+    signal,
+  });
+  return isOk(data, response, "GET /trips/{id}/telemetry");
+};
+
 export const useAvailable = (enabled: boolean) => {
   return useQuery({
     queryKey: ["available"],

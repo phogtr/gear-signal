@@ -24,6 +24,28 @@ export const makeHistory = (capacity: number, series: number) => {
       return true;
     },
 
+    merge: (rows: { t: number; values: number[] }[]): boolean => {
+      const byTime = new Map(rows.map((r) => [r.t, r.values]));
+      const known = size;
+      for (let i = 0; i < size; i++) {
+        const row = (start + i) % capacity;
+        byTime.set(
+          columns[0][row],
+          columns.slice(1).map((col) => col[row]),
+        );
+      }
+      if (byTime.size === known) return false;
+
+      const merged = [...byTime].sort((a, b) => a[0] - b[0]).slice(-capacity);
+      merged.forEach(([t, values], row) => {
+        columns[0][row] = t;
+        values.forEach((v, i) => (columns[i + 1][row] = v));
+      });
+      start = 0;
+      size = merged.length;
+      return true;
+    },
+
     clear: () => {
       start = 0;
       size = 0;

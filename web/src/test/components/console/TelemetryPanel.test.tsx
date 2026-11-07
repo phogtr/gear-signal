@@ -12,14 +12,14 @@ import { depots, live, routes, vehicle } from "./fixtures";
 vi.mock("../../../components/console/TelemetryCharts", () => ({
   TelemetryCharts: ({
     data,
-    alerts,
+    alertByLabel,
   }: {
     data: { label: string }[];
-    alerts: Map<string, string>;
+    alertByLabel: Map<string, string>;
   }) => (
     <p>
       charts: {data.map((m) => m.label).join(", ")}
-      {alerts.size > 0 && `; alerts: ${[...alerts].join(" ")}`}
+      {alertByLabel.size > 0 && `; alerts: ${[...alertByLabel].join(" ")}`}
     </p>
   ),
 }));

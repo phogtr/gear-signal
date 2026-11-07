@@ -4,8 +4,11 @@ import "uplot/dist/uPlot.min.css";
 
 import { SeverityLabel } from "./Severity";
 
+import { fetchTripTelemetry } from "../../lib/api/queries";
+
 import { useSocketStore } from "../../lib/ws/socket";
 import { makeHistory } from "../../lib/history";
+import { backfill } from "../../lib/backfill";
 import {
   chartSummary,
   decimals,
@@ -26,14 +29,14 @@ const FONT = `${10 * uPlot.pxRatio}px "Fira Code Variable", monospace`;
 interface Props {
   vehicleId: number;
   data: Metric[];
-  alerts: Map<string, AlertSeverity>; // by metric label
+  alertByLabel: Map<string, AlertSeverity>;
   startedAt?: string;
 }
 
 export const TelemetryCharts = ({
   vehicleId,
   data,
-  alerts,
+  alertByLabel,
   startedAt,
 }: Props) => {
   const plots = useRef<(HTMLDivElement | null)[]>([]);
@@ -56,11 +59,11 @@ export const TelemetryCharts = ({
 
     const done = store.completed[vehicleId];
     const live = store.vehicles.find((v) => v.vehicleId === vehicleId);
-    const first = live ?? done?.state;
-    if (!first) return;
+    const state = live ?? done?.state;
+    if (!state) return;
 
     const specs = labels.map((l) =>
-      metrics(first, 0).find((m) => m.label === l)!,
+      metrics(state, 0).find((m) => m.label === l)!,
     );
     const colors = {
       line: themeColor("info"),
@@ -71,7 +74,7 @@ export const TelemetryCharts = ({
     };
 
     const history = makeHistory(CAPACITY, labels.length);
-    let tripId = first.tripId;
+    let tripId = state.tripId;
     let frame = 0;
     let firstX: number | null = null;
     let newestX: number | null = null;
@@ -159,7 +162,10 @@ export const TelemetryCharts = ({
               (u) => {
                 const idx = u.cursor.idx;
                 const y = idx == null ? undefined : u.data[1][idx];
-                hoverCaption.current[i]!.textContent =
+                const caption = hoverCaption.current[i];
+                if (!caption) return;
+
+                caption.textContent =
                   idx == null || y == null
                     ? ""
                     : `${elapsed(u.data[0][idx])} s: ${y.toFixed(digits)} ${spec.unit}`;
@@ -174,6 +180,8 @@ export const TelemetryCharts = ({
 
     const draw = () => {
       frame = 0;
+      if (!plots.current[0]) return;
+
       const data = history.data();
       charts.current.forEach((u, i) => {
         u.setData([data[0], data[i + 1]]);
@@ -192,6 +200,13 @@ export const TelemetryCharts = ({
       });
     };
 
+    const valuesOf = (state: VehicleState) => {
+      const ms = metrics(state, 0);
+      return labels.map(
+        (l) => ms.find((m) => m.label === l)?.gauge?.value ?? NaN,
+      );
+    };
+
     const push = (state: VehicleState, ts: string) => {
       if (state.tripId !== tripId) {
         history.clear();
@@ -204,17 +219,31 @@ export const TelemetryCharts = ({
       const x = Date.parse(ts) / 1000;
       firstX ??= x;
       newestX = Math.max(newestX ?? x, x);
-      const ms = metrics(state, 0);
-      const values = labels.map(
-        (l) => ms.find((m) => m.label === l)?.gauge?.value ?? NaN,
-      );
-      if (history.push(x, values) && !frame) {
+      if (history.push(x, valuesOf(state)) && !frame) {
         frame = requestAnimationFrame(draw);
       }
     };
 
     if (live && store.ts) push(live, store.ts);
     else if (done) push(done.state, done.at);
+
+    const openedTrip = state.tripId;
+    const stopBackfill = backfill(
+      (signal) => fetchTripTelemetry(openedTrip, WINDOW_S, signal),
+      (res) => {
+        if (tripId !== openedTrip || res.length === 0) return;
+
+        const rows = res.map((p) => ({
+          t: Date.parse(p.ts) / 1000,
+          values: valuesOf({ ...state, ...p }),
+        }));
+        firstX = Math.min(firstX ?? rows[0].t, rows[0].t);
+        newestX = Math.max(newestX ?? 0, rows[rows.length - 1].t);
+        if (history.merge(rows) && !frame) {
+          frame = requestAnimationFrame(draw);
+        }
+      },
+    );
 
     const unsubscribe = useSocketStore.subscribe((s, prev) => {
       if (!s.ts || s.ts === prev.ts) return;
@@ -226,13 +255,15 @@ export const TelemetryCharts = ({
     });
 
     const resize = new ResizeObserver(() =>
-      charts.current.forEach((u, i) =>
-        u.setSize({ width: plots.current[i]!.clientWidth, height: HEIGHT }),
-      ),
+      charts.current.forEach((u, i) => {
+        const el = plots.current[i];
+        if (el) u.setSize({ width: el.clientWidth, height: HEIGHT });
+      }),
     );
     plots.current.forEach((el) => el && resize.observe(el));
 
     return () => {
+      stopBackfill();
       unsubscribe();
       cancelAnimationFrame(frame);
       resize.disconnect();
@@ -242,10 +273,10 @@ export const TelemetryCharts = ({
   }, [vehicleId, key]);
 
   return (
-    <section aria-labelledby="trends-heading" className="mt-4">
+    <section aria-label={`Last ${WINDOW_S} s`} className="mt-4">
       <div className="mt-2 grid gap-2">
         {data.map((m, i) => {
-          const severity = alerts.get(m.label);
+          const severity = alertByLabel.get(m.label);
           return (
             <figure
               key={m.label}
