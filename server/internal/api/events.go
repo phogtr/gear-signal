@@ -9,7 +9,7 @@ import (
 const defaultEventLimit = 50
 
 func (s *Server) ListEvents(ctx context.Context, req gen.ListEventsRequestObject) (gen.ListEventsResponseObject, error) {
-	limit, msg := eventLimit(req.Params)
+	limit, msg := limitParam(req.Params.Limit, defaultEventLimit)
 	if msg != "" {
 		return gen.ListEvents400JSONResponse{Message: msg}, nil
 	}
@@ -31,14 +31,4 @@ func (s *Server) ListEvents(ctx context.Context, req gen.ListEventsRequestObject
 		}
 	}
 	return resp, nil
-}
-
-func eventLimit(p gen.ListEventsParams) (int, string) {
-	if p.Limit == nil {
-		return defaultEventLimit, ""
-	}
-	if *p.Limit < 1 || *p.Limit > 200 {
-		return 0, "limit must be between 1 and 200"
-	}
-	return *p.Limit, ""
 }

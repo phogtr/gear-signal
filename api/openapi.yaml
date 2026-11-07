@@ -177,6 +177,42 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /trips/{id}/telemetry:
+    get:
+      operationId: listTripTelemetry
+      description: >
+        The newest archived telemetry of a trip, oldest first, at most one point per second.
+        Empty for a trip that hasn't started or was archived too long ago (14 days). The archive
+        is written every few seconds and has holes where the server wasn't running.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+        - name: limit
+          in: query
+          required: false
+          description: How many of the newest points to return (default 60).
+          schema: { type: integer, minimum: 1, maximum: 200 }
+      responses:
+        "200":
+          description: The newest points, oldest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TelemetryPoint" }
+        "400":
+          description: Invalid query parameter
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "404":
+          description: Trip not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /events:
     get:
       operationId: listEvents
@@ -354,6 +390,18 @@ components:
         code: { $ref: "#/components/schemas/EventCode" }
         message: { type: string, example: Speeding at 118 km/h }
         ts: { type: string, format: date-time }
+
+    TelemetryPoint:
+      type: object
+      required: [ts, speed]
+      properties:
+        ts: { type: string, format: date-time }
+        speed: { type: number, format: double, description: Meters per second }
+        battery: { type: number, format: double, description: "0..1, EVs only" }
+        fuel:
+          { type: number, format: double, description: "0..1, diesels only" }
+        engineTemp:
+          { type: number, format: double, description: "°C, diesels only" }
 
     Error:
       type: object

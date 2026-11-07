@@ -119,6 +119,23 @@ export interface paths {
         patch: operations["updateTrip"];
         trace?: never;
     };
+    "/trips/{id}/telemetry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The newest archived telemetry of a trip, oldest first, at most one point per second. Empty for a trip that hasn't started or was archived too long ago (14 days). The archive is written every few seconds and has holes where the server wasn't running. */
+        get: operations["listTripTelemetry"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events": {
         parameters: {
             query?: never;
@@ -269,6 +286,30 @@ export interface components {
             message: string;
             /** Format: date-time */
             ts: string;
+        };
+        TelemetryPoint: {
+            /** Format: date-time */
+            ts: string;
+            /**
+             * Format: double
+             * @description Meters per second
+             */
+            speed: number;
+            /**
+             * Format: double
+             * @description 0..1, EVs only
+             */
+            battery?: number;
+            /**
+             * Format: double
+             * @description 0..1, diesels only
+             */
+            fuel?: number;
+            /**
+             * Format: double
+             * @description °C, diesels only
+             */
+            engineTemp?: number;
         };
         Error: {
             message: string;
@@ -521,6 +562,49 @@ export interface operations {
             };
             /** @description Unsupported status change */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    listTripTelemetry: {
+        parameters: {
+            query?: {
+                /** @description How many of the newest points to return (default 60). */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The newest points, oldest first */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TelemetryPoint"][];
+                };
+            };
+            /** @description Invalid query parameter */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Trip not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

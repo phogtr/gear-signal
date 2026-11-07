@@ -237,6 +237,22 @@ type Route struct {
 	OriginDepotId int64  `json:"originDepotId"`
 }
 
+// TelemetryPoint defines model for TelemetryPoint.
+type TelemetryPoint struct {
+	// Battery 0..1, EVs only
+	Battery *float64 `json:"battery,omitempty"`
+
+	// EngineTemp °C, diesels only
+	EngineTemp *float64 `json:"engineTemp,omitempty"`
+
+	// Fuel 0..1, diesels only
+	Fuel *float64 `json:"fuel,omitempty"`
+
+	// Speed Meters per second
+	Speed float64   `json:"speed"`
+	Ts    time.Time `json:"ts"`
+}
+
 // Trip defines model for Trip.
 type Trip struct {
 	CompletedAt    *time.Time `json:"completedAt,omitempty"`
@@ -304,6 +320,12 @@ type ListTripsParams struct {
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
+// ListTripTelemetryParams defines parameters for ListTripTelemetry.
+type ListTripTelemetryParams struct {
+	// Limit How many of the newest points to return (default 60).
+	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // CreateTripJSONRequestBody defines body for CreateTrip for application/json ContentType.
 type CreateTripJSONRequestBody = NewTrip
 
@@ -333,6 +355,9 @@ type ServerInterface interface {
 
 	// (PATCH /trips/{id})
 	UpdateTrip(w http.ResponseWriter, r *http.Request, id int64)
+
+	// (GET /trips/{id}/telemetry)
+	ListTripTelemetry(w http.ResponseWriter, r *http.Request, id int64, params ListTripTelemetryParams)
 
 	// (GET /vehicles)
 	ListVehicles(w http.ResponseWriter, r *http.Request)
@@ -377,6 +402,11 @@ func (_ Unimplemented) CreateTrip(w http.ResponseWriter, r *http.Request) {
 
 // (PATCH /trips/{id})
 func (_ Unimplemented) UpdateTrip(w http.ResponseWriter, r *http.Request, id int64) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /trips/{id}/telemetry)
+func (_ Unimplemented) ListTripTelemetry(w http.ResponseWriter, r *http.Request, id int64, params ListTripTelemetryParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -573,6 +603,48 @@ func (siw *ServerInterfaceWrapper) UpdateTrip(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// ListTripTelemetry operation middleware
+func (siw *ServerInterfaceWrapper) ListTripTelemetry(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTripTelemetryParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTripTelemetry(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListVehicles operation middleware
 func (siw *ServerInterfaceWrapper) ListVehicles(w http.ResponseWriter, r *http.Request) {
 
@@ -737,6 +809,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/trips/{id}", wrapper.UpdateTrip)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{id}/telemetry", wrapper.ListTripTelemetry)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/events", wrapper.ListEvents)
@@ -1023,6 +1098,57 @@ func (response UpdateTrip422JSONResponse) VisitUpdateTripResponse(w http.Respons
 	return err
 }
 
+type ListTripTelemetryRequestObject struct {
+	Id     int64 `json:"id"`
+	Params ListTripTelemetryParams
+}
+
+type ListTripTelemetryResponseObject interface {
+	VisitListTripTelemetryResponse(w http.ResponseWriter) error
+}
+
+type ListTripTelemetry200JSONResponse []TelemetryPoint
+
+func (response ListTripTelemetry200JSONResponse) VisitListTripTelemetryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTripTelemetry400JSONResponse Error
+
+func (response ListTripTelemetry400JSONResponse) VisitListTripTelemetryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTripTelemetry404JSONResponse Error
+
+func (response ListTripTelemetry404JSONResponse) VisitListTripTelemetryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListVehiclesRequestObject struct {
 }
 
@@ -1088,6 +1214,9 @@ type StrictServerInterface interface {
 
 	// (PATCH /trips/{id})
 	UpdateTrip(ctx context.Context, request UpdateTripRequestObject) (UpdateTripResponseObject, error)
+
+	// (GET /trips/{id}/telemetry)
+	ListTripTelemetry(ctx context.Context, request ListTripTelemetryRequestObject) (ListTripTelemetryResponseObject, error)
 
 	// (GET /vehicles)
 	ListVehicles(ctx context.Context, request ListVehiclesRequestObject) (ListVehiclesResponseObject, error)
@@ -1316,6 +1445,33 @@ func (sh *strictHandler) UpdateTrip(w http.ResponseWriter, r *http.Request, id i
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(UpdateTripResponseObject); ok {
 		if err := validResponse.VisitUpdateTripResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListTripTelemetry operation middleware
+func (sh *strictHandler) ListTripTelemetry(w http.ResponseWriter, r *http.Request, id int64, params ListTripTelemetryParams) {
+	var request ListTripTelemetryRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListTripTelemetry(ctx, request.(ListTripTelemetryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListTripTelemetry")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListTripTelemetryResponseObject); ok {
+		if err := validResponse.VisitListTripTelemetryResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
