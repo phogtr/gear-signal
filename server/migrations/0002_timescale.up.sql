@@ -1,6 +1,3 @@
--- Telemetry: append-only time series, stored as a TimescaleDB hypertable.
--- No foreign keys on purpose: keeps inserts fast; the simulator is the only writer.
-
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 
 CREATE TABLE telemetry (

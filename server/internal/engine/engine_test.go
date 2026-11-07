@@ -20,8 +20,10 @@ type fakeStore struct {
 	completed []int64
 	etas      map[int64]time.Time
 	events    []store.Event
+	telemetry [][]store.Telemetry
 	failNext  bool
 	failEvent bool
+	failRows  bool
 }
 
 func (f *fakeStore) ListRoutes(context.Context) ([]store.Route, error) { return f.routes, nil }
@@ -82,6 +84,15 @@ func (f *fakeStore) InsertEvents(_ context.Context, events []store.Event) error 
 		events[i].ID = int64(len(f.events) + 1)
 		f.events = append(f.events, events[i])
 	}
+	return nil
+}
+
+func (f *fakeStore) InsertTelemetry(_ context.Context, rows []store.Telemetry) error {
+	if f.failRows {
+		f.failRows = false
+		return errors.New("db down")
+	}
+	f.telemetry = append(f.telemetry, rows)
 	return nil
 }
 

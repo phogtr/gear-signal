@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"sync"
 	"time"
 
 	"github.com/phogtr/gear-signal/internal/alert"
@@ -23,6 +24,7 @@ type Store interface {
 	SetTripETA(ctx context.Context, tripID int64, eta time.Time) error                           // store/trips.go
 	CompleteTrip(ctx context.Context, tripID int64, completedAt time.Time) error                 // store/trips.go
 	InsertEvents(ctx context.Context, events []store.Event) error                                // store/events.go
+	InsertTelemetry(ctx context.Context, rows []store.Telemetry) error                           // store/telemetry.go
 }
 
 type Sender interface {
@@ -31,6 +33,7 @@ type Sender interface {
 }
 
 const directorInterval = 5 * time.Second
+const archiveInterval = 5 * time.Second
 
 // Engine owns the simulator: ticks once a second, writes finished trips
 // to database. Only Run's goroutine touches the sim
@@ -43,6 +46,7 @@ type Engine struct {
 	routesByOrigin map[int64][]int64
 	vehicleTypes   map[int64]string
 	rng            *rand.Rand
+	telemetry      []store.Telemetry
 }
 
 // loads the routes and resumes every active trip from its started_at.
@@ -117,6 +121,21 @@ func (e *Engine) Run(ctx context.Context) {
 	defer ticker.Stop()
 	director := time.NewTicker(directorInterval)
 	defer director.Stop()
+	archiving := time.NewTicker(archiveInterval)
+	defer archiving.Stop()
+
+	telemetryChan := make(chan []store.Telemetry, 1)
+
+	var archiver sync.WaitGroup
+	archiver.Go(func() { e.archive(telemetryChan) })
+
+	defer func() {
+		if len(e.telemetry) > 0 {
+			telemetryChan <- e.telemetry
+		}
+		close(telemetryChan)
+		archiver.Wait()
+	}()
 
 	for {
 		select {
@@ -127,6 +146,8 @@ func (e *Engine) Run(ctx context.Context) {
 			e.startScheduled(ctx, now)
 		case now := <-director.C:
 			e.direct(ctx, now)
+		case <-archiving.C:
+			e.flushTelemetry(telemetryChan)
 		}
 	}
 }
@@ -134,6 +155,7 @@ func (e *Engine) Run(ctx context.Context) {
 func (e *Engine) step(ctx context.Context, now time.Time) []sim.State {
 	states := e.sim.Tick(now)
 	for _, st := range states {
+		e.telemetry = append(e.telemetry, telemetryRow(now, st))
 		if !st.Done {
 			continue
 		}
