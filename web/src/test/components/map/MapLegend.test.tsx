@@ -43,7 +43,7 @@ describe("MapLegend", () => {
     expect(within(rowOf("Maintenance")).getByText("1")).toBeInTheDocument();
   });
 
-  it("lists every status and the depot marker in order", () => {
+  it("lists every status, the depot marker and the alert rings in order", () => {
     render(<MapLegend vehicles={[]} />);
     const rows = within(screen.getByRole("list")).getAllByRole("listitem");
 
@@ -53,6 +53,8 @@ describe("MapLegend", () => {
       "Charging0",
       "Maintenance0",
       "Depot",
+      "Warning alert",
+      "Critical alert",
     ]);
   });
 

@@ -22,7 +22,7 @@ interface Props {
   depots: Depot[];
   routes: Route[];
   trips: Trip[];
-  alerts: Map<number, ActiveAlert[]>; // by trip id
+  alertByTripId: Map<number, ActiveAlert[]>;
 }
 
 export const TelemetryPanel = ({
@@ -30,7 +30,7 @@ export const TelemetryPanel = ({
   depots,
   routes,
   trips,
-  alerts,
+  alertByTripId,
 }: Props) => {
   const live = useSocketStore((s) =>
     s.vehicles.find((v) => v.vehicleId === vehicle.id),
@@ -85,7 +85,7 @@ export const TelemetryPanel = ({
   }
 
   // only running trip, finished one may keep a BATTERY_LOW forever
-  const alerted = (live && alerts.get(live.tripId)) || [];
+  const alerted = (live && alertByTripId.get(live.tripId)) || [];
   const alertByLabel = new Map<string, AlertSeverity>();
   for (const a of alerted) {
     const label = ALERT_METRIC[a.code];

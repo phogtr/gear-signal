@@ -63,6 +63,7 @@ const renderList = (selectedId: number | null = null, onSelect = vi.fn()) =>
       vehicles={vehicles}
       depots={depots}
       routes={routes}
+      alertByTripId={new Map()}
       selectedId={selectedId}
       onSelect={onSelect}
     />,
@@ -133,12 +134,56 @@ describe("VehicleList", () => {
         vehicles={[vehicle(2, "idle")]}
         depots={depots}
         routes={routes}
+        alertByTripId={new Map()}
         selectedId={null}
         onSelect={vi.fn()}
       />,
     );
     await user.click(screen.getByRole("button", { name: "Charging 0" }));
     expect(screen.getByText("No vehicles")).toBeInTheDocument();
+  });
+
+  it("marks a vehicle with a raised alert on its current trip", () => {
+    useSocketStore.setState({ vehicles: [moving(1, 0.5)] });
+    render(
+      <VehicleList
+        vehicles={vehicles}
+        depots={depots}
+        routes={routes}
+        alertByTripId={
+          new Map([
+            [
+              1,
+              [
+                {
+                  code: "ROUTE_DEVIATION",
+                  severity: "critical",
+                  message: "Off route by 201 m",
+                },
+              ],
+            ],
+            [
+              99,
+              [
+                {
+                  code: "SPEEDING",
+                  severity: "warning",
+                  message: "Speeding at 118 km/h",
+                },
+              ],
+            ],
+          ])
+        }
+        selectedId={null}
+        onSelect={vi.fn()}
+      />,
+    );
+    expect(within(rowOf("VAN-01")).getByRole("button")).toHaveTextContent(
+      "Critical",
+    );
+    expect(within(rowOf("VAN-02")).getByRole("button")).not.toHaveTextContent(
+      /Critical|Warning/,
+    );
   });
 
   it("selects a vehicle from its row, and clears it on a second press", async () => {
@@ -156,6 +201,7 @@ describe("VehicleList", () => {
         vehicles={vehicles}
         depots={depots}
         routes={routes}
+        alertByTripId={new Map()}
         selectedId={2}
         onSelect={onSelect}
       />,

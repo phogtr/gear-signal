@@ -9,6 +9,7 @@ import {
   routesToGeoJSON,
 } from "../../../lib/map/geojson";
 import type { Depot, Route, Vehicle } from "../../../lib/api/client";
+import type { ActiveAlert } from "../../../lib/events";
 
 const depot = (id: number, lon: number, lat: number): Depot => ({
   id,
@@ -199,13 +200,38 @@ describe("parkedVehiclesToGeoJSON", () => {
 });
 
 describe("liveVehiclesToGeoJSON", () => {
+  const moving = {
+    vehicleId: 7,
+    tripId: 70,
+    lng: -118.3,
+    lat: 34.01,
+    degree: 45,
+  };
+
   it("places each vehicle at its position with its heading", () => {
-    const [f] = liveVehiclesToGeoJSON([
-      { vehicleId: 7, lng: -118.3, lat: 34.01, degree: 45 },
-    ]).features;
+    const [f] = liveVehiclesToGeoJSON([moving], new Map()).features;
     expect(f.id).toBe(7);
     expect(f.geometry.coordinates).toEqual([-118.3, 34.01]);
     expect(f.properties).toEqual({ degree: 45 });
+  });
+
+  it("adds the worst raised severity of the vehicle's trip", () => {
+    const alerts = new Map<number, ActiveAlert[]>([
+      [
+        70,
+        [
+          { code: "OVERHEAT", severity: "critical", message: "a" },
+          { code: "SPEEDING", severity: "warning", message: "b" },
+        ],
+      ],
+      [99, [{ code: "SPEEDING", severity: "warning", message: "c" }]],
+    ]);
+    const [f, other] = liveVehiclesToGeoJSON(
+      [moving, { ...moving, vehicleId: 8, tripId: 80 }],
+      alerts,
+    ).features;
+    expect(f.properties).toEqual({ degree: 45, severity: "critical" });
+    expect(other.properties).toEqual({ degree: 45 });
   });
 });
 

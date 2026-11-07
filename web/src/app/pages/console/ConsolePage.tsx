@@ -1,4 +1,3 @@
-import { useMemo } from "react";
 import { useSearchParams } from "react-router";
 
 import { ActiveVehiclePicker } from "../../../components/console/ActiveVehiclePicker";
@@ -10,14 +9,12 @@ import { SocketStatus } from "../../../components/map/SocketStatus";
 import {
   useActiveTrips,
   useDepots,
-  useEvents,
   useRoutes,
   useVehicles,
 } from "../../../lib/api/queries";
 import { useSocket } from "../../../lib/ws/useSocket";
-import { useSocketStore } from "../../../lib/ws/socket";
+import { useAlerts } from "../../../lib/useAlerts";
 import { parseVehicleId } from "../../../lib/console";
-import { activeAlerts, mergeEvents } from "../../../lib/events";
 
 export const ConsolePage = () => {
   const [params] = useSearchParams();
@@ -29,14 +26,7 @@ export const ConsolePage = () => {
   const depots = useDepots();
   const routes = useRoutes();
   const trips = useActiveTrips();
-  const history = useEvents();
-  const live = useSocketStore((s) => s.events);
-
-  const events = useMemo(
-    () => mergeEvents(history.data ?? [], live),
-    [history.data, live],
-  );
-  const alerts = useMemo(() => activeAlerts(events), [events]);
+  const { events, alertByTripId, history } = useAlerts();
 
   const error = vehicles.error ?? depots.error ?? routes.error ?? trips.error;
   // rows wait for names, so they never flash "No vehicles"
@@ -70,7 +60,7 @@ export const ConsolePage = () => {
             depots={depots.data!}
             routes={routes.data!}
             trips={trips.data ?? []}
-            alerts={alerts}
+            alertByTripId={alertByTripId}
             selectedId={selectedId}
           />
 
@@ -81,7 +71,7 @@ export const ConsolePage = () => {
               depots={depots.data!}
               routes={routes.data!}
               trips={trips.data ?? []}
-              alerts={alerts}
+              alertByTripId={alertByTripId}
             />
           ) : (
             <p className="p-4 rounded-lg border border-dashed border-border text-sm text-muted-foreground">

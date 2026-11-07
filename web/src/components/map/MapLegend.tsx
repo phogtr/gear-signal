@@ -30,6 +30,21 @@ export const MapLegend = ({ vehicles }: { vehicles: Vehicle[] }) => {
           />
           <span className="flex-1">Depot</span>
         </li>
+        <li className="flex items-center gap-2">
+          <span
+            aria-hidden="true"
+            className="size-2.5 rounded-full border"
+            style={{ borderColor: cssColor(WARNING_COLOR) }}
+          />
+          <span className="flex-1">Warning alert</span>
+        </li>
+        <li className="flex items-center gap-2">
+          <span
+            aria-hidden="true"
+            className="size-2.5 rounded-full border-2 border-danger"
+          />
+          <span className="flex-1">Critical alert</span>
+        </li>
       </ul>
     </section>
   );

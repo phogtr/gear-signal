@@ -42,6 +42,7 @@ describe("VehicleDetail", () => {
         vehicle={van("idle")}
         depots={depots}
         routes={routes}
+        alertByTripId={new Map()}
         onClose={vi.fn()}
       />,
     );
@@ -84,6 +85,7 @@ describe("VehicleDetail", () => {
         vehicle={van("en_route")}
         depots={depots}
         routes={routes}
+        alertByTripId={new Map()}
         trip={trip}
         onClose={vi.fn()}
       />,
@@ -104,6 +106,7 @@ describe("VehicleDetail", () => {
         vehicle={van("idle")}
         depots={depots}
         routes={routes}
+        alertByTripId={new Map()}
         onClose={onClose}
       />,
     );
@@ -113,5 +116,74 @@ describe("VehicleDetail", () => {
     );
     await user.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it("lists the raised alerts of the vehicle's current trip", () => {
+    useSocketStore.setState({
+      vehicles: [
+        {
+          vehicleId: 5,
+          tripId: 1,
+          routeId: 8,
+          distance: 10_000,
+          speed: 18,
+          lat: 34,
+          lng: -118,
+          degree: 180,
+          progress: 0.25,
+          done: false,
+        },
+      ],
+    });
+    render(
+      <VehicleDetail
+        vehicle={van("en_route")}
+        depots={depots}
+        routes={routes}
+        alertByTripId={
+          new Map([
+            [
+              1,
+              [
+                {
+                  code: "ROUTE_DEVIATION",
+                  severity: "critical",
+                  message: "Off route by 201 m",
+                },
+              ],
+            ],
+            [
+              2,
+              [
+                {
+                  code: "SPEEDING",
+                  severity: "warning",
+                  message: "Speeding at 118 km/h",
+                },
+              ],
+            ],
+          ])
+        }
+        onClose={vi.fn()}
+      />,
+    );
+    const list = screen.getByRole("list", { name: "Active alerts" });
+    expect(list).toHaveTextContent("CriticalOff route by 201 m");
+    expect(list).not.toHaveTextContent("Speeding");
+  });
+
+  it("has no alert list without raised alerts", () => {
+    render(
+      <VehicleDetail
+        vehicle={van("idle")}
+        depots={depots}
+        routes={routes}
+        alertByTripId={new Map()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByRole("list", { name: "Active alerts" }),
+    ).not.toBeInTheDocument();
   });
 });

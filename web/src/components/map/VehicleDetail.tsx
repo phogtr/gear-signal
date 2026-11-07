@@ -1,12 +1,15 @@
 import { useEffect } from "react";
 
 import { StatusIcon } from "./StatusIcon";
+import { SeverityLabel } from "../console/Severity";
 
 import { useSocketStore } from "../../lib/ws/socket";
 import { useNow } from "../../lib/useNow";
 import { formatClock, formatCountdown, routeLabel } from "../../lib/format";
+
 import { VEHICLE_STATUSES, VEHICLE_TYPE_LABELS } from "../../constants/map";
 
+import type { ActiveAlert } from "../../lib/events";
 import type { Depot, Route, Trip, Vehicle } from "../../lib/api/client";
 
 interface Props {
@@ -14,6 +17,7 @@ interface Props {
   depots: Depot[];
   routes: Route[];
   trip?: Trip;
+  alertByTripId: Map<number, ActiveAlert[]>;
   onClose: () => void;
 }
 
@@ -22,6 +26,7 @@ export const VehicleDetail = ({
   depots,
   routes,
   trip,
+  alertByTripId,
   onClose,
 }: Props) => {
   // re-renders only this panel on every tick while vehicle moves
@@ -41,6 +46,7 @@ export const VehicleDetail = ({
   const route = state && routes.find((r) => r.id === state.routeId);
   const status = VEHICLE_STATUSES.find((s) => s.status === vehicle.status)!;
   const eta = trip?.eta ? new Date(trip.eta) : undefined;
+  const alerted = (state && alertByTripId.get(state.tripId)) ?? [];
 
   const rows: [string, string][] = [
     ["Status", status.label],
@@ -84,6 +90,17 @@ export const VehicleDetail = ({
           ×
         </button>
       </div>
+
+      {alerted.length > 0 && (
+        <ul aria-label="Active alerts" className="mt-2 space-y-1">
+          {alerted.map((a) => (
+            <li key={a.code} className="flex items-center gap-2">
+              <SeverityLabel severity={a.severity} />
+              <span>{a.message}</span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
         {rows.map(([label, value]) => (

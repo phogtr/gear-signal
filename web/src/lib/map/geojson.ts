@@ -5,6 +5,8 @@ import type {
   Point as GeoPoint,
 } from "geojson";
 
+import { getSeverity, type ActiveAlert } from "../events";
+
 import type { Depot, Route, Vehicle } from "../api/client";
 import type { MovingVehicle } from "./motion";
 
@@ -14,7 +16,7 @@ const EARTH_CIRCUMFERENCE = 40_075_016.686; // 2 × π × 6,378,137
 const METERS_PER_DEGREE_LAT = 111_320; // EARTH_CIRCUMFERENCE / 360 -> 2πR / 360 = πR / 180
 const TILE_SIZE_PX = 512; // MapLibre's tile size
 
-// ground distance covered by one screen pixel at a zoom level and latitude
+// ground distance cover by one screen pixel at a zoom level & latitude
 // https://learn.microsoft.com/en-us/bingmaps/articles/bing-maps-tile-system#ground-resolution-and-map-scale
 export const metersPerPixel = (zoom: number, lat: number): number =>
   (EARTH_CIRCUMFERENCE * Math.cos((lat * Math.PI) / 180)) /
@@ -51,8 +53,8 @@ export const depotsToGeoJSON = (
   })),
 });
 
-// parked vehicles all share their depot's coordinate, so drawn as-is they would
-// stack into one dot. Spread each depot's vehicles evenly on a small ring around it.
+// parked vehicles all share depot's coordinate; drawn as-is they would
+// stack into one dot. Spread each depot's vehicles evenly on a small ring around it
 export const parkedVehiclesToGeoJSON = (
   vehicles: Vehicle[],
   depots: Depot[],
@@ -87,17 +89,21 @@ export const parkedVehiclesToGeoJSON = (
   return { type: "FeatureCollection", features };
 };
 
-// vehicles on a trip, at the position streamed by the server
+// vehicles on a trip, at position streamed by server
 export const liveVehiclesToGeoJSON = (
   vehicles: MovingVehicle[],
+  alertByTripId: Map<number, ActiveAlert[]>,
 ): FeatureCollection<GeoPoint> => ({
   type: "FeatureCollection",
-  features: vehicles.map((v) => ({
-    type: "Feature",
-    id: v.vehicleId,
-    properties: { degree: v.degree },
-    geometry: { type: "Point", coordinates: [v.lng, v.lat] },
-  })),
+  features: vehicles.map((v) => {
+    const severity = getSeverity(alertByTripId.get(v.tripId));
+    return {
+      type: "Feature",
+      id: v.vehicleId,
+      properties: { degree: v.degree, ...(severity && { severity }) },
+      geometry: { type: "Point", coordinates: [v.lng, v.lat] },
+    };
+  }),
 });
 
 // moves a point `meters` in direction `angle` (radians, 0 = east). Accurate enough

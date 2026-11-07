@@ -35,6 +35,7 @@ describe("makeMotion", () => {
     const m = makeMotion();
     m.update([state(0)], 0);
     expect(m.positions(500, routes)[0].lng).toBeCloseTo(0, 9);
+    expect(m.positions(500, routes)[0].tripId).toBe(1);
   });
 
   it("interpolates between the last two ticks, one tick behind", () => {

@@ -3,6 +3,7 @@ import type { Polyline } from "./polyline";
 
 export interface MovingVehicle {
   vehicleId: number;
+  tripId: number;
   lng: number;
   lat: number;
   degree: number;
@@ -58,8 +59,8 @@ export const makeMotion = () => {
       const route = routes.get(state.routeId);
       // not loaded yet
       if (!route) {
-        const { vehicleId, lng, lat, degree } = state;
-        return { vehicleId, lng, lat, degree };
+        const { vehicleId, tripId, lng, lat, degree } = state;
+        return { vehicleId, tripId, lng, lat, degree };
       }
 
       let t = 1; // 0 = at pen, 1 = at prev
@@ -75,6 +76,7 @@ export const makeMotion = () => {
       const [toLng, toLat] = offsetOf(prev, route);
       return {
         vehicleId: state.vehicleId,
+        tripId: state.tripId,
         lng: p.lng + lerp(fromLng, toLng),
         lat: p.lat + lerp(fromLat, toLat),
         degree: p.degree,

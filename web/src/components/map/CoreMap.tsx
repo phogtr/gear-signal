@@ -25,6 +25,7 @@ import { isInView, overlayPadding } from "../../lib/map/view";
 import { makePolyline, type Polyline } from "../../lib/map/polyline";
 import { themeColor } from "../../lib/theme";
 
+import type { ActiveAlert } from "../../lib/events";
 import type { Depot, Route, Vehicle } from "../../lib/api/client";
 
 import {
@@ -54,6 +55,7 @@ interface Props {
   vehicles: Vehicle[];
   selectedId: number | null;
   selectedRouteId: number | null;
+  alertByTripId: Map<number, ActiveAlert[]>;
   onSelect: (id: number | null) => void;
 }
 
@@ -67,6 +69,7 @@ export const CoreMap = ({
   vehicles,
   selectedId,
   selectedRouteId,
+  alertByTripId,
   onSelect,
 }: Props) => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -78,6 +81,7 @@ export const CoreMap = ({
   const dataRef = useRef({ depots, vehicles });
   const polylinesRef = useRef(new Map<number, Polyline>());
   const onSelectRef = useRef(onSelect);
+  const alertsRef = useRef(alertByTripId);
 
   // create the map once; MapLibre owns this DOM node from here on
   useEffect(() => {
@@ -133,6 +137,10 @@ export const CoreMap = ({
   }, []);
 
   useEffect(() => {
+    alertsRef.current = alertByTripId;
+  }, [alertByTripId]);
+
+  useEffect(() => {
     polylinesRef.current = new Map(
       routes.map((r) => [r.id, makePolyline(r.coordinates)]),
     );
@@ -162,6 +170,7 @@ export const CoreMap = ({
       source?.setData(
         liveVehiclesToGeoJSON(
           motion.positions(performance.now(), polylinesRef.current, isMotion),
+          alertsRef.current,
         ),
       );
     };
@@ -395,6 +404,25 @@ const addCoreLayers = (map: MapLibreMap) => {
     id: "live-selected",
     source: "live",
     paint: { ...selectedRing.paint, "circle-radius": 13 },
+  });
+
+  map.addLayer({
+    id: "live-alert",
+    type: "circle",
+    source: "live",
+    filter: ["has", "severity"],
+    paint: {
+      "circle-radius": 17,
+      "circle-color": "rgba(0, 0, 0, 0)",
+      "circle-stroke-color": [
+        "match",
+        ["get", "severity"],
+        "critical",
+        themeColor("danger"),
+        themeColor(WARNING_COLOR),
+      ],
+      "circle-stroke-width": ["match", ["get", "severity"], "critical", 3, 1.5],
+    },
   });
 
   // vehicles on a trip, hollow triangles

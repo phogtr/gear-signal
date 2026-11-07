@@ -38,7 +38,7 @@ const renderPanel = (
       depots={depots}
       routes={routes}
       trips={trips}
-      alerts={alerts}
+      alertByTripId={alerts}
     />,
   );
 

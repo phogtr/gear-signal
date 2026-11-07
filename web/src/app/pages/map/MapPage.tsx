@@ -14,6 +14,7 @@ import {
 } from "../../../lib/api/queries";
 import { useSocketStore } from "../../../lib/ws/socket";
 import { useSocket } from "../../../lib/ws/useSocket";
+import { useAlerts } from "../../../lib/useAlerts";
 
 import { NotebookTabIcon } from "../../../icons/NotebookTabIcon";
 
@@ -25,6 +26,7 @@ export const MapPage = () => {
   useSocket();
 
   const trips = useActiveTrips();
+  const { alertByTripId } = useAlerts();
 
   const [isListOpen, setIsListOpen] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -49,6 +51,7 @@ export const MapPage = () => {
           vehicles={vehicles.data ?? []}
           selectedId={selectedId}
           selectedRouteId={selectedRouteId}
+          alertByTripId={alertByTripId}
           onSelect={setSelectedId}
         />
 
@@ -64,6 +67,7 @@ export const MapPage = () => {
                 depots={depots.data ?? []}
                 routes={routes.data ?? []}
                 trip={trips.data?.find((t) => t.vehicleId === selected.id)}
+                alertByTripId={alertByTripId}
                 onClose={clearSelection}
               />
             </div>
@@ -94,7 +98,7 @@ export const MapPage = () => {
           aria-controls="vehicle-list"
           title={isListOpen ? "Hide vehicle list" : "Show vehicle list"}
           onClick={() => setIsListOpen((open) => !open)}
-          className={`absolute top-8 left-1/2 hidden -translate-x-1/2 items-center justify-center rounded-lg border p-2 transition-colors focus-visible:outline-2 focus-visible:outline-primary md:flex [&_svg]:size-5 ${
+          className={`absolute top-8 left-1/2 hidden -translate-x-1/2 p-2 items-center justify-center rounded-lg border shadow-xs transition-colors focus-visible:outline-2 focus-visible:outline-primary md:flex [&_svg]:size-5 ${
             isListOpen
               ? "border-border bg-card text-primary"
               : "border-border bg-card text-muted-foreground hover:text-foreground"
@@ -114,6 +118,7 @@ export const MapPage = () => {
           vehicles={vehicles.data ?? []}
           depots={depots.data ?? []}
           routes={routes.data ?? []}
+          alertByTripId={alertByTripId}
           selectedId={selectedId}
           onSelect={setSelectedId}
         />

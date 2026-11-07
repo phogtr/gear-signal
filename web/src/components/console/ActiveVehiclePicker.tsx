@@ -15,7 +15,7 @@ interface Props {
   depots: Depot[];
   routes: Route[];
   trips: Trip[];
-  alerts: Map<number, ActiveAlert[]>; // by trip id
+  alertByTripId: Map<number, ActiveAlert[]>;
   selectedId: number | null;
 }
 
@@ -26,7 +26,7 @@ export const ActiveVehiclePicker = ({
   depots,
   routes,
   trips,
-  alerts,
+  alertByTripId,
   selectedId,
 }: Props) => {
   const states = useSocketStore((s) => s.vehicles);
@@ -64,7 +64,7 @@ export const ActiveVehiclePicker = ({
           const where = route ? routeLabel(route, depots) : "—";
           const percent = Math.round(state.progress * 100);
           const isSelected = vehicle.id === selectedId;
-          const severity = getSeverity(alerts.get(state.tripId));
+          const severity = getSeverity(alertByTripId.get(state.tripId));
 
           return (
             <li

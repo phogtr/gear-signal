@@ -1,9 +1,12 @@
 import { useState } from "react";
 
 import { StatusIcon } from "./StatusIcon";
+import { SeverityLabel } from "../console/Severity";
 
 import { useSocketStore } from "../../lib/ws/socket";
 import { routeLabel } from "../../lib/format";
+import { getSeverity, type ActiveAlert } from "../../lib/events";
+
 import { VEHICLE_STATUSES, VEHICLE_TYPE_LABELS } from "../../constants/map";
 
 import type { Depot, Route, Vehicle } from "../../lib/api/client";
@@ -14,6 +17,7 @@ interface Props {
   vehicles: Vehicle[];
   depots: Depot[];
   routes: Route[];
+  alertByTripId: Map<number, ActiveAlert[]>;
   selectedId: number | null;
   onSelect: (id: number | null) => void;
 }
@@ -22,6 +26,7 @@ export const VehicleList = ({
   vehicles,
   depots,
   routes,
+  alertByTripId,
   selectedId,
   onSelect,
 }: Props) => {
@@ -88,6 +93,7 @@ export const VehicleList = ({
               ? route && routeLabel(route, depots)
               : depotName.get(v.depotId);
           const percent = s ? Math.round(s.progress * 100) : undefined;
+          const severity = s && getSeverity(alertByTripId.get(s.tripId));
 
           return (
             <li
@@ -108,6 +114,9 @@ export const VehicleList = ({
                   <span className="text-muted-foreground">
                     {VEHICLE_TYPE_LABELS[v.type]}
                   </span>
+                  {severity && (
+                    <SeverityLabel severity={severity} isText={false} />
+                  )}
                   <span className="ml-auto">{status.label}</span>
                 </div>
 

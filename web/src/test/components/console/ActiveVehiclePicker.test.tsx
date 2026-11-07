@@ -37,7 +37,7 @@ const renderPicker = (
         depots={depots}
         routes={routes}
         trips={trips}
-        alerts={alerts}
+        alertByTripId={alerts}
         selectedId={selectedId}
       />
     </MemoryRouter>,
