@@ -227,7 +227,7 @@ func TestSimulatedFaults(t *testing.T) {
 			if id%2 == 0 {
 				vehicleType = sim.EVVan
 			}
-			if _, err := s.Start(sim.Trip{ID: id, VehicleID: 1, VehicleType: vehicleType, RouteID: 1, StartedAt: t0}); err != nil {
+			if _, err := s.Start(sim.Trip{ID: id, VehicleID: 1, VehicleType: vehicleType, RouteID: 1, StartedAt: t0, Res: 0.9}); err != nil {
 				t.Fatal(err)
 			}
 			trips++

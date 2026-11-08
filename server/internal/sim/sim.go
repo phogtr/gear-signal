@@ -29,6 +29,7 @@ type Trip struct {
 	VehicleType string
 	RouteID     int64
 	StartedAt   time.Time
+	Res         float64 // 0..1
 }
 
 type State struct {
@@ -39,12 +40,12 @@ type State struct {
 	Speed     float64 // meters per second
 	Lat, Lng  float64
 	Degree    float64 // 0 = north
-	Progress  float64 // 0..1
+	Progress  float64
 	Done      bool
 
-	Battery    *float64 // 0..1, EVs
-	Fuel       *float64 // 0..1, diesels
-	EngineTemp *float64 // °C, diesels
+	Battery    *float64
+	Fuel       *float64
+	EngineTemp *float64 // °C
 }
 
 // speed swings up to ±25% each trip's average, as sum of two waves.
@@ -105,7 +106,6 @@ type active struct {
 	mean   float64    // m/s
 	phases [2]float64 // radians
 	travel float64    // sim seconds from start to arrival
-	level  float64    // battery or fuel at the start, 0..1
 	fault  fault
 }
 
@@ -150,7 +150,7 @@ func (s *Sim) Start(t Trip) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("trip %d: unknown vehicle type %q", t.ID, t.VehicleType)
 	}
 
-	a := &active{Trip: t, route: r, mean: r.avgSpeed * speedFactor(t.ID), phases: wavePhases(t.ID), level: startLevel(t.ID)}
+	a := &active{Trip: t, route: r, mean: r.avgSpeed * speedFactor(t.ID), phases: wavePhases(t.ID)}
 
 	length := r.line.Length()
 	if kind, progress := pickFault(t.ID, t.VehicleType); kind != noFault {
@@ -212,13 +212,13 @@ func (s *Sim) Tick(now time.Time) []State {
 	return states
 }
 
-// level drain by distance; engine temp is Newton's law of cooling plus noise
+// resource (res) drain by distance; engine temp is Newton's law of cooling plus noise
 func (a *active) telemetry(st *State, t float64) {
 	if a.VehicleType == EVVan {
-		st.Battery = new(max(a.level-batteryPerM*st.Distance, 0))
+		st.Battery = new(max(a.Res-batteryPerM*st.Distance, 0))
 		return
 	}
-	st.Fuel = new(max(a.level-fuelPerM*st.Distance, 0))
+	st.Fuel = new(max(a.Res-fuelPerM*st.Distance, 0))
 	// https://en.wikipedia.org/wiki/Newton%27s_law_of_cooling#First-order_transient_response_of_lumped-capacitance_objects
 	temp := warmTemp - (warmTemp-coldTemp)*math.Exp(-t/warmupS)
 	if a.fault.kind == overheat {
@@ -300,10 +300,6 @@ func speedFactor(tripID int64) float64 {
 func wavePhases(tripID int64) [2]float64 {
 	rng := rand.New(rand.NewPCG(uint64(tripID), 1))
 	return [2]float64{2 * math.Pi * rng.Float64(), 2 * math.Pi * rng.Float64()}
-}
-
-func startLevel(tripID int64) float64 {
-	return 0.55 + 0.4*rand.New(rand.NewPCG(uint64(tripID), 2)).Float64()
 }
 
 // fault start at 30-60% progress

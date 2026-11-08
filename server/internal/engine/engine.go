@@ -15,16 +15,16 @@ import (
 )
 
 type Store interface {
-	ListRoutes(ctx context.Context) ([]store.Route, error)                                       // store/routes.go
-	ListTrips(ctx context.Context, f store.TripFilter) ([]store.Trip, error)                     // store/trips.go
-	ListVehicles(ctx context.Context) ([]store.Vehicle, error)                                   // store/vehicles.go
-	StartTrip(ctx context.Context, vehicleID, routeID int64, startedAt time.Time) (int64, error) // store/trips.go
-	ListScheduledReadyTrips(ctx context.Context, now time.Time) ([]store.Trip, error)            // store/trips.go
-	StartScheduledTrip(ctx context.Context, tripID int64, startedAt time.Time) (bool, error)     // store/trips.go
-	SetTripETA(ctx context.Context, tripID int64, eta time.Time) error                           // store/trips.go
-	CompleteTrip(ctx context.Context, tripID int64, completedAt time.Time) error                 // store/trips.go
-	InsertEvents(ctx context.Context, events []store.Event) error                                // store/events.go
-	InsertTelemetry(ctx context.Context, rows []store.Telemetry) error                           // store/telemetry.go
+	ListRoutes(ctx context.Context) ([]store.Route, error)                                                // store/routes.go
+	ListTrips(ctx context.Context, f store.TripFilter) ([]store.Trip, error)                              // store/trips.go
+	ListVehicles(ctx context.Context) ([]store.Vehicle, error)                                            // store/vehicles.go
+	StartTrip(ctx context.Context, vehicleID, routeID int64, startedAt time.Time) (int64, float64, error) // store/trips.go
+	ListScheduledReadyTrips(ctx context.Context, now time.Time) ([]store.Trip, error)                     // store/trips.go
+	StartScheduledTrip(ctx context.Context, tripID int64, startedAt time.Time) (float64, bool, error)     // store/trips.go
+	SetTripETA(ctx context.Context, tripID int64, eta time.Time) error                                    // store/trips.go
+	CompleteTrip(ctx context.Context, tripID int64, completedAt time.Time, Res float64) error             // store/trips.go
+	InsertEvents(ctx context.Context, events []store.Event) error                                         // store/events.go
+	InsertTelemetry(ctx context.Context, rows []store.Telemetry) error                                    // store/telemetry.go
 }
 
 type Sender interface {
@@ -68,6 +68,7 @@ func New(ctx context.Context, st Store, writer Sender, multiplier float64, demoT
 			// coordinates is [][2]float64, points is []geo.Point
 			points[j] = geo.Point(c)
 		}
+
 		simRoutes[i] = sim.Route{ID: r.ID, Points: points, DurationS: r.DurationS}
 		if lines[r.ID], err = geo.NewPolyline(points); err != nil {
 			return nil, fmt.Errorf("route %d: %w", r.ID, err)
@@ -93,7 +94,11 @@ func New(ctx context.Context, st Store, writer Sender, multiplier float64, demoT
 		if t.StartedAt == nil {
 			return nil, fmt.Errorf("active trip %d has no started_at", t.ID)
 		}
-		eta, err := s.Start(sim.Trip{ID: t.ID, VehicleID: t.VehicleID, VehicleType: vehicleTypes[t.VehicleID], RouteID: t.RouteID, StartedAt: *t.StartedAt})
+		if t.StartRes == nil {
+			return nil, fmt.Errorf("active trip %d has no start resource", t.ID)
+		}
+
+		eta, err := s.Start(sim.Trip{ID: t.ID, VehicleID: t.VehicleID, VehicleType: vehicleTypes[t.VehicleID], RouteID: t.RouteID, StartedAt: *t.StartedAt, Res: *t.StartRes / 100})
 		if err != nil {
 			return nil, err
 		}
@@ -159,9 +164,9 @@ func (e *Engine) step(ctx context.Context, now time.Time) []sim.State {
 		if !st.Done {
 			continue
 		}
-		// sim has already dropped the trip; if this write fails the trip stays
-		// active in the DB and completes again on the next boot
-		if err := e.store.CompleteTrip(ctx, st.TripID, now); err != nil {
+		// sim has already dropped the trip; if this write fails the trip stay
+		// active in DB & complete again on next boot
+		if err := e.store.CompleteTrip(ctx, st.TripID, now, resource(st)); err != nil {
 			slog.Error("complete trip", "err", err)
 			continue
 		}
@@ -209,13 +214,13 @@ func (e *Engine) startScheduled(ctx context.Context, now time.Time) {
 
 	for _, t := range trips {
 		startedAt := now.Truncate(time.Microsecond)
-		started, err := e.store.StartScheduledTrip(ctx, t.ID, startedAt)
+		res, started, err := e.store.StartScheduledTrip(ctx, t.ID, startedAt)
 		if err != nil {
 			slog.Error("scheduler", "err", err)
 			continue
 		}
 		if started {
-			e.launch(ctx, sim.Trip{ID: t.ID, VehicleID: t.VehicleID, VehicleType: e.vehicleTypes[t.VehicleID], RouteID: t.RouteID, StartedAt: startedAt})
+			e.launch(ctx, sim.Trip{ID: t.ID, VehicleID: t.VehicleID, VehicleType: e.vehicleTypes[t.VehicleID], RouteID: t.RouteID, StartedAt: startedAt, Res: res / 100})
 		}
 	}
 }
@@ -249,12 +254,12 @@ func (e *Engine) direct(ctx context.Context, now time.Time) {
 
 	// Postgres keeps microseconds; truncate keeps Go and DB identical for resumes
 	startedAt := now.Truncate(time.Microsecond)
-	tripID, err := e.store.StartTrip(ctx, vehicleID, routeID, startedAt)
+	tripID, res, err := e.store.StartTrip(ctx, vehicleID, routeID, startedAt)
 	if err != nil {
 		slog.Error("director", "err", err)
 		return
 	}
-	e.launch(ctx, sim.Trip{ID: tripID, VehicleID: vehicleID, VehicleType: e.vehicleTypes[vehicleID], RouteID: routeID, StartedAt: startedAt})
+	e.launch(ctx, sim.Trip{ID: tripID, VehicleID: vehicleID, VehicleType: e.vehicleTypes[vehicleID], RouteID: routeID, StartedAt: startedAt, Res: res / 100})
 }
 
 // simulate a trip that already active in DB & saves its ETA

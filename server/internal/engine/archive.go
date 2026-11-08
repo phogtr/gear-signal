@@ -26,11 +26,18 @@ func telemetryRow(now time.Time, st sim.State) store.Telemetry {
 	}
 }
 
-func percent(level *float64) *float64 {
-	if level == nil {
+func resource(st sim.State) float64 {
+	if st.Battery != nil {
+		return *st.Battery * 100
+	}
+	return *st.Fuel * 100
+}
+
+func percent(res *float64) *float64 {
+	if res == nil {
 		return nil
 	}
-	p := *level * 100
+	p := *res * 100
 	return &p
 }
 

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"math"
 	"slices"
 	"testing"
 	"time"
@@ -41,15 +42,12 @@ func (f *fakeStore) ListTrips(_ context.Context, filter store.TripFilter) ([]sto
 
 func (f *fakeStore) ListVehicles(context.Context) ([]store.Vehicle, error) { return f.vehicles, nil }
 
-func (f *fakeStore) StartTrip(_ context.Context, vehicleID, routeID int64, startedAt time.Time) (int64, error) {
-	for i := range f.vehicles {
-		if f.vehicles[i].ID == vehicleID {
-			f.vehicles[i].Status = "en_route"
-		}
-	}
+func (f *fakeStore) StartTrip(_ context.Context, vehicleID, routeID int64, startedAt time.Time) (int64, float64, error) {
+	v := f.vehicle(vehicleID)
+	v.Status = "en_route"
 	id := int64(len(f.trips) + 1)
-	f.trips = append(f.trips, store.Trip{ID: id, VehicleID: vehicleID, RouteID: routeID, Status: "active", StartedAt: &startedAt})
-	return id, nil
+	f.trips = append(f.trips, store.Trip{ID: id, VehicleID: vehicleID, RouteID: routeID, Status: "active", StartedAt: &startedAt, StartRes: new(v.Res)})
+	return id, v.Res, nil
 }
 
 func (f *fakeStore) SetTripETA(_ context.Context, id int64, eta time.Time) error {
@@ -60,7 +58,7 @@ func (f *fakeStore) SetTripETA(_ context.Context, id int64, eta time.Time) error
 	return nil
 }
 
-func (f *fakeStore) CompleteTrip(_ context.Context, id int64, _ time.Time) error {
+func (f *fakeStore) CompleteTrip(_ context.Context, id int64, _ time.Time, Res float64) error {
 	if f.failNext {
 		f.failNext = false
 		return errors.New("db down")
@@ -71,6 +69,7 @@ func (f *fakeStore) CompleteTrip(_ context.Context, id int64, _ time.Time) error
 		if v := f.vehicle(t.VehicleID); v != nil {
 			v.Status = "idle"
 			v.DepotID = f.route(t.RouteID).DestinationDepotID
+			v.Res = Res
 		}
 	}
 	return nil
@@ -106,16 +105,17 @@ func (f *fakeStore) ListScheduledReadyTrips(_ context.Context, now time.Time) ([
 	return out, nil
 }
 
-func (f *fakeStore) StartScheduledTrip(_ context.Context, id int64, startedAt time.Time) (bool, error) {
+func (f *fakeStore) StartScheduledTrip(_ context.Context, id int64, startedAt time.Time) (float64, bool, error) {
 	t := f.trip(id)
 	v := f.vehicle(t.VehicleID)
 	if t.Status != "scheduled" || (v.Status != "idle" && v.Status != "charging") || v.DepotID != f.route(t.RouteID).OriginDepotID {
-		return false, nil
+		return 0, false, nil
 	}
 	v.Status = "en_route"
 	t.Status = "active"
 	t.StartedAt = &startedAt
-	return true, nil
+	t.StartRes = new(v.Res)
+	return v.Res, true, nil
 }
 
 func (f *fakeStore) trip(id int64) *store.Trip {
@@ -151,7 +151,7 @@ var route = store.Route{ID: 1, OriginDepotID: 1, DestinationDepotID: 2, Coordina
 var routeBack = store.Route{ID: 2, OriginDepotID: 2, DestinationDepotID: 1, Coordinates: [][2]float64{{0.01, 0}, {0, 0}}, DurationS: 100}
 
 func van(id int64, status string, depot int64) store.Vehicle {
-	return store.Vehicle{ID: id, Type: "ev_van", Status: status, DepotID: depot}
+	return store.Vehicle{ID: id, Type: "ev_van", Status: status, DepotID: depot, Res: 80}
 }
 
 func scheduledTrip(id, vehicle, routeID int64, start time.Time) store.Trip {
@@ -159,7 +159,7 @@ func scheduledTrip(id, vehicle, routeID int64, start time.Time) store.Trip {
 }
 
 func activeTrip(id, vehicle int64, startedAt time.Time) store.Trip {
-	return store.Trip{ID: id, VehicleID: vehicle, RouteID: 1, Status: "active", StartedAt: &startedAt}
+	return store.Trip{ID: id, VehicleID: vehicle, RouteID: 1, Status: "active", StartedAt: &startedAt, StartRes: new(80.0)}
 }
 
 func TestNewResumesOnlyActiveTrips(t *testing.T) {
@@ -365,9 +365,101 @@ func TestStartScheduledStartsChargingVehicle(t *testing.T) {
 	}
 }
 
+func TestResourceCarriesFromTripToTrip(t *testing.T) {
+	fs := &fakeStore{
+		routes:   []store.Route{route, routeBack},
+		vehicles: []store.Vehicle{van(7, "idle", 1)},
+		trips:    []store.Trip{scheduledTrip(1, 7, 1, t0), scheduledTrip(2, 7, 2, t0.Add(time.Hour))},
+	}
+	e, err := New(context.Background(), fs, nil, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	e.startScheduled(ctx, t0)
+	if got := *e.step(ctx, t0)[0].Battery; math.Abs(got-0.8) > 1e-9 {
+		t.Errorf("first trip starts at battery %g, want the vehicle's 0.8", got)
+	}
+
+	done := e.step(ctx, t0.Add(10*time.Minute))[0]
+	if !done.Done {
+		t.Fatalf("want the trip finished: %+v", done)
+	}
+	arrived := fs.vehicle(7).Res
+	if math.Abs(arrived-*done.Battery*100) > 1e-9 || arrived >= 80 || arrived < 79 {
+		t.Errorf("vehicle parked at %g, trip ended at %g (1.1 km drains ~0.44 points)", arrived, *done.Battery*100)
+	}
+
+	e.startScheduled(ctx, t0.Add(time.Hour))
+	if got := fs.trip(2).StartRes; got == nil || *got != arrived {
+		t.Errorf("second trip's start resource = %v, want %g", got, arrived)
+	}
+	if got := *e.step(ctx, t0.Add(time.Hour))[0].Battery; math.Abs(got-arrived/100) > 1e-9 {
+		t.Errorf("second trip starts at battery %g, want %g", got, arrived/100)
+	}
+}
+
+func TestDirectStartsAtTheVehiclesResource(t *testing.T) {
+	v := van(7, "idle", 1)
+	v.Res = 33
+	fs := &fakeStore{routes: []store.Route{route}, vehicles: []store.Vehicle{v}}
+	e, err := New(context.Background(), fs, nil, 1, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.direct(context.Background(), t0)
+	if got := *e.step(context.Background(), t0)[0].Battery; math.Abs(got-0.33) > 1e-9 {
+		t.Errorf("battery = %g, want 0.33", got)
+	}
+}
+
+func TestNewResumesFromTheStoredStartResource(t *testing.T) {
+	trip := activeTrip(1, 7, t0)
+	trip.StartRes = new(42.0)
+	fs := &fakeStore{routes: []store.Route{route}, vehicles: []store.Vehicle{van(7, "en_route", 1)}, trips: []store.Trip{trip}}
+
+	var battery [2]float64
+	for i := range battery {
+		e, err := New(context.Background(), fs, nil, 1, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		battery[i] = *e.step(context.Background(), t0.Add(10*time.Second))[0].Battery
+	}
+	if battery[0] != battery[1] || battery[0] > 0.42 || battery[0] < 0.41 {
+		t.Errorf("battery before/after restart = %v, want the same, just under 0.42", battery)
+	}
+}
+
+func TestNewRejectsActiveTripWithoutStartResource(t *testing.T) {
+	broken := activeTrip(1, 7, t0)
+	broken.StartRes = nil
+	fs := &fakeStore{routes: []store.Route{route}, vehicles: []store.Vehicle{van(7, "en_route", 1)}, trips: []store.Trip{broken}}
+	if _, err := New(context.Background(), fs, nil, 1, 0); err == nil {
+		t.Error("want an error for an active trip without a start resource")
+	}
+}
+
+func TestTruckParksWithItsFuel(t *testing.T) {
+	fs := &fakeStore{
+		routes:   []store.Route{route},
+		vehicles: []store.Vehicle{{ID: 7, Type: "diesel_truck", Status: "en_route", DepotID: 1, Res: 60}},
+		trips:    []store.Trip{activeTrip(1, 7, t0)},
+	}
+	e, err := New(context.Background(), fs, nil, 1, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := e.step(context.Background(), t0.Add(10*time.Minute))[0]
+	if done.Fuel == nil || math.Abs(fs.vehicle(7).Res-*done.Fuel*100) > 1e-9 {
+		t.Errorf("parked at %g, trip ended at %v", fs.vehicle(7).Res, done.Fuel)
+	}
+}
+
 func TestVehicleTypeReachesTheSim(t *testing.T) {
 	truck := func(id int64, status string) store.Vehicle {
-		return store.Vehicle{ID: id, Type: "diesel_truck", Status: status, DepotID: 1}
+		return store.Vehicle{ID: id, Type: "diesel_truck", Status: status, DepotID: 1, Res: 60}
 	}
 	fs := &fakeStore{
 		routes:   []store.Route{route},
@@ -419,7 +511,7 @@ func alertingFleet() *fakeStore {
 	fs := &fakeStore{routes: []store.Route{longRoute}}
 	for id := int64(1); id <= 40; id++ {
 		fs.vehicles = append(fs.vehicles, van(id, "en_route", 1))
-		fs.trips = append(fs.trips, store.Trip{ID: id, VehicleID: id, RouteID: 3, Status: "active", StartedAt: &t0})
+		fs.trips = append(fs.trips, store.Trip{ID: id, VehicleID: id, RouteID: 3, Status: "active", StartedAt: &t0, StartRes: new(80.0)})
 	}
 	return fs
 }

@@ -24,9 +24,10 @@ type Trip struct {
 	CompletedAt    *time.Time `db:"completed_at"`
 	Status         string     `db:"status"`
 	Source         string     `db:"source"`
+	StartRes       *float64   `db:"start_res"`
 }
 
-const tripColumns = `id, vehicle_id, route_id, scheduled_start, started_at, eta, completed_at, status, source`
+const tripColumns = `id, vehicle_id, route_id, scheduled_start, started_at, eta, completed_at, status, source, start_res`
 
 type NotFoundError struct {
 	What string
@@ -78,9 +79,9 @@ func (s *Store) ListTrips(ctx context.Context, f TripFilter) ([]Trip, error) {
 	return pgx.CollectRows(rows, pgx.RowToStructByName[Trip])
 }
 
-// marks an active trip completed and parks its vehicle, idle, at the route's
-// destination depot. One statement, so both rows change together or not at all
-func (s *Store) CompleteTrip(ctx context.Context, tripID int64, completedAt time.Time) error {
+// mark an active trip completed & park vehicle, idle, at route's
+// destination depot. One statement, both rows change together or not
+func (s *Store) CompleteTrip(ctx context.Context, tripID int64, completedAt time.Time, res float64) error {
 	tag, err := s.pool.Exec(ctx, `
 		WITH t AS (
 			UPDATE trips SET status = 'completed', completed_at = $2
@@ -88,9 +89,9 @@ func (s *Store) CompleteTrip(ctx context.Context, tripID int64, completedAt time
 			RETURNING vehicle_id, route_id
 		)
 		UPDATE vehicles v
-		SET status = 'idle', depot_id = r.destination_depot_id
+		SET status = 'idle', depot_id = r.destination_depot_id, res = $3
 		FROM t JOIN routes r ON r.id = t.route_id
-		WHERE v.id = t.vehicle_id`, tripID, completedAt)
+		WHERE v.id = t.vehicle_id`, tripID, completedAt, res)
 
 	if err != nil {
 		return fmt.Errorf("complete trip %d: %w", tripID, err)
@@ -101,11 +102,10 @@ func (s *Store) CompleteTrip(ctx context.Context, tripID int64, completedAt time
 	return nil
 }
 
-// update the idle and not scheduled, vehicle status to en-route.
-// And insert a new status active trip.
-func (s *Store) StartTrip(ctx context.Context, vehicleID, routeID int64, startedAt time.Time) (int64, error) {
-	var id int64
-	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
+// update idle & not scheduled, vehicle status to en-route;
+// and insert a new status active trip
+func (s *Store) StartTrip(ctx context.Context, vehicleID, routeID int64, startedAt time.Time) (id int64, res float64, err error) {
+	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		// locked, the next concurrent see a trip scheduled
 		if _, err := tx.Exec(ctx, `SELECT 1 FROM vehicles WHERE id = $1 FOR UPDATE`, vehicleID); err != nil {
 			return err
@@ -117,21 +117,21 @@ func (s *Store) StartTrip(ctx context.Context, vehicleID, routeID int64, started
 				FROM routes r
 				WHERE v.id = $1 AND v.status = 'idle' AND r.id = $2 AND r.origin_depot_id = v.depot_id
 					AND NOT EXISTS (SELECT 1 FROM trips t WHERE t.vehicle_id = v.id AND t.status = 'scheduled')
-				RETURNING v.id
+				RETURNING v.id, v.res
 			)
-			INSERT INTO trips (vehicle_id, route_id, scheduled_start, started_at, status, source)
-			SELECT v.id, $2, $3, $3, 'active', 'demo' FROM v
-			RETURNING id
-		`, vehicleID, routeID, startedAt).Scan(&id)
+			INSERT INTO trips (vehicle_id, route_id, scheduled_start, started_at, status, source, start_res)
+			SELECT v.id, $2, $3, $3, 'active', 'demo', v.res FROM v
+			RETURNING id, start_res
+		`, vehicleID, routeID, startedAt).Scan(&id, &res)
 	})
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, fmt.Errorf("start trip: vehicle %d is not idle at the origin of route %d, or has scheduled trips", vehicleID, routeID)
+		return 0, 0, fmt.Errorf("start trip: vehicle %d is not idle at the origin of route %d, or has scheduled trips", vehicleID, routeID)
 	}
 	if err != nil {
-		return 0, fmt.Errorf("start trip: %w", err)
+		return 0, 0, fmt.Errorf("start trip: %w", err)
 	}
-	return id, nil
+	return id, res, nil
 }
 
 // scheduled ready trips, oldest first
@@ -148,9 +148,9 @@ func (s *Store) ListScheduledReadyTrips(ctx context.Context, now time.Time) ([]T
 	return pgx.CollectRows(rows, pgx.RowToStructByName[Trip])
 }
 
-// update the idle/charging and scheduled, vehicle status to en-route.
-// And update vehicle's trip status to active.
-func (s *Store) StartScheduledTrip(ctx context.Context, tripID int64, startedAt time.Time) (started bool, err error) {
+// update idle/charging & scheduled, vehicle status to en-route;
+// and update vehicle's trip status to active
+func (s *Store) StartScheduledTrip(ctx context.Context, tripID int64, startedAt time.Time) (res float64, started bool, err error) {
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `
 			SELECT 1 FROM vehicles v JOIN trips t ON t.vehicle_id = v.id
@@ -158,24 +158,26 @@ func (s *Store) StartScheduledTrip(ctx context.Context, tripID int64, startedAt 
 			return err
 		}
 
-		tag, err := tx.Exec(ctx, `
+		return tx.QueryRow(ctx, `
 			WITH v AS (
 				UPDATE vehicles v SET status = 'en_route'
 				FROM trips t JOIN routes r ON r.id = t.route_id
 				WHERE t.id = $1 AND t.status = 'scheduled' AND v.id = t.vehicle_id
 					AND v.status IN ('idle', 'charging') AND v.depot_id = r.origin_depot_id
-				RETURNING v.id
+				RETURNING v.id, v.res
 			)
-			UPDATE trips SET status = 'active', started_at = $2
-			FROM v WHERE trips.id = $1`, tripID, startedAt)
-		started = tag.RowsAffected() == 1
-		return err
+			UPDATE trips SET status = 'active', started_at = $2, start_res = v.res
+			FROM v WHERE trips.id = $1
+			RETURNING trips.start_res`, tripID, startedAt).Scan(&res)
 	})
 
-	if err != nil {
-		return false, fmt.Errorf("start scheduled trip %d: %w", tripID, err)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, nil
 	}
-	return started, nil
+	if err != nil {
+		return 0, false, fmt.Errorf("start scheduled trip %d: %w", tripID, err)
+	}
+	return res, true, nil
 }
 
 func (s *Store) SetTripETA(ctx context.Context, tripID int64, eta time.Time) error {
@@ -267,10 +269,10 @@ func (s *Store) CancelTrip(ctx context.Context, tripID int64, check func(Plan, T
 	return trip, err
 }
 
-// lock vehicle row (FOR UPDATE) and loads its plan
+// lock vehicle row (FOR UPDATE) & loads its plan
 func lockPlan(ctx context.Context, tx pgx.Tx, vehicleID int64) (Plan, error) {
 	rows, _ := tx.Query(ctx, `
-		SELECT id, name, plate, type, status, depot_id
+		SELECT id, name, plate, type, status, depot_id, res
 		FROM vehicles WHERE id = $1 FOR UPDATE`, vehicleID)
 	v, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Vehicle])
 

@@ -258,14 +258,15 @@ func TestTelemetryByVehicleType(t *testing.T) {
 	}
 }
 
-func TestLevelsDrainByDistance(t *testing.T) {
+func TestResourceDrainByDistance(t *testing.T) {
 	for _, tt := range []struct {
 		vehicleType string
 		perKm       float64
 	}{{EVVan, 0.004}, {DieselTruck, 0.35 / 300}} {
 		s := newSim(t, 1)
-		eta := start(t, s, Trip{ID: 3, VehicleID: 1, VehicleType: tt.vehicleType, RouteID: 1, StartedAt: t0})
-		level := func(st State) float64 {
+		initial := 0.7
+		eta := start(t, s, Trip{ID: 3, VehicleID: 1, VehicleType: tt.vehicleType, RouteID: 1, StartedAt: t0, Res: initial})
+		resource := func(st State) float64 {
 			if st.Battery != nil {
 				return *st.Battery
 			}
@@ -273,17 +274,21 @@ func TestLevelsDrainByDistance(t *testing.T) {
 		}
 
 		first := s.Tick(t0)[0]
-		initial := startLevel(3)
-		if initial < 0.55 || initial > 0.95 {
-			t.Errorf("start level %g outside 55-95%%", initial)
-		}
-		near(t, tt.vehicleType+" level at start", level(first), initial, 1e-12)
+		near(t, tt.vehicleType+" resource at start", resource(first), initial, 1e-12)
 
 		mid := s.Tick(t0.Add(30 * time.Second))[0]
-		near(t, tt.vehicleType+" level mid-trip", level(mid), initial-tt.perKm*mid.Distance/1000, 1e-12)
+		near(t, tt.vehicleType+" resource mid-trip", resource(mid), initial-tt.perKm*mid.Distance/1000, 1e-12)
 
 		end := s.Tick(eta.Add(time.Second))[0]
-		near(t, tt.vehicleType+" level at arrival", level(end), initial-tt.perKm*end.Distance/1000, 1e-12)
+		near(t, tt.vehicleType+" resource at arrival", resource(end), initial-tt.perKm*end.Distance/1000, 1e-12)
+	}
+}
+
+func TestResourceStopsAtZero(t *testing.T) {
+	s := newSim(t, 1)
+	eta := start(t, s, Trip{ID: 3, VehicleID: 1, VehicleType: EVVan, RouteID: 1, StartedAt: t0, Res: 0.0001})
+	if got := *s.Tick(eta.Add(time.Second))[0].Battery; got != 0 {
+		t.Errorf("battery at arrival = %g, want 0", got)
 	}
 }
 

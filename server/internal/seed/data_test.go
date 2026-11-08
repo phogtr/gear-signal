@@ -52,6 +52,13 @@ func TestVehiclesFleetShape(t *testing.T) {
 		if v.Status == "charging" && v.Type != "ev_van" {
 			t.Errorf("%s is a %s but charging", v.Name, v.Type)
 		}
+		lo, hi := 55.0, 95.0
+		if v.Status == "charging" {
+			lo, hi = 20, 40
+		}
+		if v.Res < lo || v.Res > hi {
+			t.Errorf("%s (%s) resource %g outside %g-%g", v.Name, v.Status, v.Res, lo, hi)
+		}
 	}
 	if status["charging"] != charging || status["maintenance"] != inMaintenance {
 		t.Errorf("statuses = %v", status)

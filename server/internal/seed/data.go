@@ -31,10 +31,11 @@ type Vehicle struct {
 	Type   string
 	Status string
 	Depot  string
+	Res    float64
 }
 
-// reads depots.json and routes/*.json from fsys and checks that every
-// route starts and ends at a known depot.
+// read depots.json & routes/*.json from fsys & check every
+// route start & end at a known depot
 func Load(fsys fs.FS) ([]Depot, []Route, error) {
 	var depots []Depot
 	if err := readJSON(fsys, "depots.json", &depots); err != nil {
@@ -84,7 +85,7 @@ const (
 	inMaintenance = 2
 )
 
-// generates the demo fleet with a fixed seed.
+// generates demo fleet with a fixed seed
 func Vehicles(depots []Depot) []Vehicle {
 	rng := rand.New(rand.NewPCG(2026, 10))
 
@@ -123,11 +124,17 @@ func Vehicles(depots []Depot) []Vehicle {
 		}
 	}
 
+	for i := range fleet {
+		fleet[i].Res = 55 + 40*rng.Float64()
+		if fleet[i].Status == "charging" {
+			fleet[i].Res = 20 + 20*rng.Float64()
+		}
+	}
+
 	return fleet
 }
 
-// returns a California-style plate like "8GSV123". CA skips I, O and Q
-// because they look like 1 and 0.
+// return California-style plate like "8GSV123". CA skip I, O, Q
 func plate(rng *rand.Rand) string {
 	const letters = "ABCDEFGHJKLMNPRSTUVWXYZ"
 	b := []byte{byte('1' + rng.IntN(9))}

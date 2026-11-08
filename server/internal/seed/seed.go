@@ -9,7 +9,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// reports what a run changed for one table.
 type Counts struct {
 	Inserted, Updated, Unchanged int
 }
@@ -22,11 +21,8 @@ type Result struct {
 	Depots, Routes, Vehicles Counts
 }
 
-// upserts depots, routes and vehicles in one transaction, so a failed run
-// leaves the database untouched. Safe to run repeatedly:
-//   - depots and routes follow the fixtures (changed rows are updated);
-//   - vehicles are only inserted, never overwritten, because their status and
-//     current depot change while the app runs.
+// upsert depots, routes & vehicles in one transaction, failed run
+// leaves the database untouched
 func Run(ctx context.Context, pool *pgxpool.Pool, depots []Depot, routes []Route, vehicles []Vehicle) (Result, error) {
 	var res Result
 	err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
@@ -47,9 +43,9 @@ func Run(ctx context.Context, pool *pgxpool.Pool, depots []Depot, routes []Route
 	return res, err
 }
 
-// The upsert below use two Postgres details:
-//   - `WHERE ... IS DISTINCT FROM ...` skips the update when nothing changed,
-//     so no row is returned for unchanged data;
+// upsert below use two Postgres details:
+//   - `WHERE ... IS DISTINCT FROM ...` skip update when nothing changed,
+//     no row is return for unchanged data;
 //   - `xmax = 0` is true only for a freshly inserted row, which tells an insert
 //     apart from an update in RETURNING.
 
@@ -103,9 +99,9 @@ func insertVehicles(ctx context.Context, tx pgx.Tx, vehicles []Vehicle, depotIDs
 	var c Counts
 	for _, v := range vehicles {
 		tag, err := tx.Exec(ctx, `
-			INSERT INTO vehicles (name, plate, type, status, depot_id) VALUES ($1, $2, $3, $4, $5)
+			INSERT INTO vehicles (name, plate, type, status, depot_id, res) VALUES ($1, $2, $3, $4, $5, $6)
 			ON CONFLICT (name) DO NOTHING`,
-			v.Name, v.Plate, v.Type, v.Status, depotIDs[v.Depot])
+			v.Name, v.Plate, v.Type, v.Status, depotIDs[v.Depot], v.Res)
 
 		if err != nil {
 			return c, fmt.Errorf("vehicle %q: %w", v.Name, err)
@@ -135,8 +131,7 @@ func depotIDs(ctx context.Context, tx pgx.Tx) (map[string]int64, error) {
 	return ids, err
 }
 
-// add classifies one upsert result. pgx.ErrNoRows means the WHERE clause skipped
-// the update because the row already matched.
+// pgx.ErrNoRows mean WHERE clause skipped update because row already matched
 func (c *Counts) add(inserted bool, err error) error {
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
