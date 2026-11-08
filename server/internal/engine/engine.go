@@ -15,16 +15,17 @@ import (
 )
 
 type Store interface {
-	ListRoutes(ctx context.Context) ([]store.Route, error)                                                // store/routes.go
-	ListTrips(ctx context.Context, f store.TripFilter) ([]store.Trip, error)                              // store/trips.go
-	ListVehicles(ctx context.Context) ([]store.Vehicle, error)                                            // store/vehicles.go
-	StartTrip(ctx context.Context, vehicleID, routeID int64, startedAt time.Time) (int64, float64, error) // store/trips.go
-	ListScheduledReadyTrips(ctx context.Context, now time.Time) ([]store.Trip, error)                     // store/trips.go
-	StartScheduledTrip(ctx context.Context, tripID int64, startedAt time.Time) (float64, bool, error)     // store/trips.go
-	SetTripETA(ctx context.Context, tripID int64, eta time.Time) error                                    // store/trips.go
-	CompleteTrip(ctx context.Context, tripID int64, completedAt time.Time, Res float64) error             // store/trips.go
-	InsertEvents(ctx context.Context, events []store.Event) error                                         // store/events.go
-	InsertTelemetry(ctx context.Context, rows []store.Telemetry) error                                    // store/telemetry.go
+	ListRoutes(ctx context.Context) ([]store.Route, error)                                                                               // store/routes.go
+	ListTrips(ctx context.Context, f store.TripFilter) ([]store.Trip, error)                                                             // store/trips.go
+	ListVehicles(ctx context.Context) ([]store.Vehicle, error)                                                                           // store/vehicles.go
+	StartTrip(ctx context.Context, vehicleID, routeID int64, startedAt time.Time) (int64, float64, error)                                // store/trips.go
+	ListScheduledReadyTrips(ctx context.Context, now time.Time) ([]store.Trip, error)                                                    // store/trips.go
+	StartScheduledTrip(ctx context.Context, tripID int64, startedAt time.Time, resAt func(store.Vehicle) float64) (float64, bool, error) // store/trips.go
+	SetTripETA(ctx context.Context, tripID int64, eta time.Time) error                                                                   // store/trips.go
+	CompleteTrip(ctx context.Context, tripID int64, completedAt time.Time, res float64, isCharge bool) error                             // store/trips.go
+	StopCharging(ctx context.Context, vehicleID int64, res float64) error                                                                // store/vehicles.go
+	InsertEvents(ctx context.Context, events []store.Event) error                                                                        // store/events.go
+	InsertTelemetry(ctx context.Context, rows []store.Telemetry) error                                                                   // store/telemetry.go
 }
 
 type Sender interface {
@@ -47,6 +48,7 @@ type Engine struct {
 	vehicleTypes   map[int64]string
 	rng            *rand.Rand
 	telemetry      []store.Telemetry
+	simSpeed       float64
 }
 
 // loads the routes and resumes every active trip from its started_at.
@@ -118,6 +120,7 @@ func New(ctx context.Context, st Store, writer Sender, multiplier float64, demoT
 		routesByOrigin: routesByOrigin,
 		vehicleTypes:   vehicleTypes,
 		rng:            rand.New(rand.NewPCG(uint64(time.Now().UnixNano()), 0)),
+		simSpeed:       multiplier,
 	}, nil
 }
 
@@ -150,6 +153,7 @@ func (e *Engine) Run(ctx context.Context) {
 			e.step(ctx, now)
 			e.startScheduled(ctx, now)
 		case now := <-director.C:
+			e.charge(ctx, now)
 			e.direct(ctx, now)
 		case <-archiving.C:
 			e.flushTelemetry(telemetryChan)
@@ -166,11 +170,12 @@ func (e *Engine) step(ctx context.Context, now time.Time) []sim.State {
 		}
 		// sim has already dropped the trip; if this write fails the trip stay
 		// active in DB & complete again on next boot
-		if err := e.store.CompleteTrip(ctx, st.TripID, now, resource(st)); err != nil {
+		res, isCharge := park(e.vehicleTypes[st.VehicleID], resource(st))
+		if err := e.store.CompleteTrip(ctx, st.TripID, now, res, isCharge); err != nil {
 			slog.Error("complete trip", "err", err)
 			continue
 		}
-		slog.Info("completed trip", "trip", st.TripID, "vehicle", st.VehicleID)
+		slog.Info("completed trip", "trip", st.TripID, "vehicle", st.VehicleID, "res", fmt.Sprintf("%.1f", res), "isCharge", isCharge)
 	}
 
 	events := e.record(ctx, e.alerts.Eval(now, states))
@@ -214,7 +219,7 @@ func (e *Engine) startScheduled(ctx context.Context, now time.Time) {
 
 	for _, t := range trips {
 		startedAt := now.Truncate(time.Microsecond)
-		res, started, err := e.store.StartScheduledTrip(ctx, t.ID, startedAt)
+		res, started, err := e.store.StartScheduledTrip(ctx, t.ID, startedAt, func(v store.Vehicle) float64 { return e.resAt(v, startedAt) })
 		if err != nil {
 			slog.Error("scheduler", "err", err)
 			continue
@@ -282,4 +287,11 @@ func typesByID(vehicles []store.Vehicle) map[int64]string {
 		types[v.ID] = v.Type
 	}
 	return types
+}
+
+func resource(st sim.State) float64 {
+	if st.Battery != nil {
+		return *st.Battery * 100
+	}
+	return *st.Fuel * 100
 }

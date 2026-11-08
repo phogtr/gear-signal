@@ -13,3 +13,9 @@ func TestMigrateURL(t *testing.T) {
 		}
 	}
 }
+
+func TestQualified(t *testing.T) {
+	if got := qualified("v", "id, name, res"); got != "v.id, v.name, v.res" {
+		t.Errorf("qualified = %q", got)
+	}
+}

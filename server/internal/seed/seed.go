@@ -99,7 +99,8 @@ func insertVehicles(ctx context.Context, tx pgx.Tx, vehicles []Vehicle, depotIDs
 	var c Counts
 	for _, v := range vehicles {
 		tag, err := tx.Exec(ctx, `
-			INSERT INTO vehicles (name, plate, type, status, depot_id, res) VALUES ($1, $2, $3, $4, $5, $6)
+			INSERT INTO vehicles (name, plate, type, status, depot_id, res, charging_since)
+			VALUES ($1, $2, $3, $4::text, $5, $6, CASE WHEN $4::text = 'charging' THEN now() END)
 			ON CONFLICT (name) DO NOTHING`,
 			v.Name, v.Plate, v.Type, v.Status, depotIDs[v.Depot], v.Res)
 

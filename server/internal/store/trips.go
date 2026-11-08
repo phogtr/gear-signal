@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -79,9 +80,9 @@ func (s *Store) ListTrips(ctx context.Context, f TripFilter) ([]Trip, error) {
 	return pgx.CollectRows(rows, pgx.RowToStructByName[Trip])
 }
 
-// mark an active trip completed & park vehicle, idle, at route's
+// mark an active trip completed & park vehicle, idle/charging, at route's
 // destination depot. One statement, both rows change together or not
-func (s *Store) CompleteTrip(ctx context.Context, tripID int64, completedAt time.Time, res float64) error {
+func (s *Store) CompleteTrip(ctx context.Context, tripID int64, completedAt time.Time, res float64, isCharge bool) error {
 	tag, err := s.pool.Exec(ctx, `
 		WITH t AS (
 			UPDATE trips SET status = 'completed', completed_at = $2
@@ -89,9 +90,11 @@ func (s *Store) CompleteTrip(ctx context.Context, tripID int64, completedAt time
 			RETURNING vehicle_id, route_id
 		)
 		UPDATE vehicles v
-		SET status = 'idle', depot_id = r.destination_depot_id, res = $3
+		SET status = CASE WHEN $4 THEN 'charging' ELSE 'idle' END,
+			charging_since = CASE WHEN $4 THEN $2::timestamptz END,
+			depot_id = r.destination_depot_id, res = $3
 		FROM t JOIN routes r ON r.id = t.route_id
-		WHERE v.id = t.vehicle_id`, tripID, completedAt, res)
+		WHERE v.id = t.vehicle_id`, tripID, completedAt, res, isCharge)
 
 	if err != nil {
 		return fmt.Errorf("complete trip %d: %w", tripID, err)
@@ -150,17 +153,21 @@ func (s *Store) ListScheduledReadyTrips(ctx context.Context, now time.Time) ([]T
 
 // update idle/charging & scheduled, vehicle status to en-route;
 // and update vehicle's trip status to active
-func (s *Store) StartScheduledTrip(ctx context.Context, tripID int64, startedAt time.Time) (res float64, started bool, err error) {
+func (s *Store) StartScheduledTrip(ctx context.Context, tripID int64, startedAt time.Time, resAt func(Vehicle) float64) (res float64, started bool, err error) {
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `
-			SELECT 1 FROM vehicles v JOIN trips t ON t.vehicle_id = v.id
-			WHERE t.id = $1 FOR UPDATE OF v`, tripID); err != nil {
+		rows, _ := tx.Query(ctx, `
+			SELECT `+qualified("v", vehicleColumns)+`
+			FROM vehicles v JOIN trips t ON t.vehicle_id = v.id
+			WHERE t.id = $1 FOR UPDATE OF v`, tripID)
+
+		v, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Vehicle])
+		if err != nil {
 			return err
 		}
 
 		return tx.QueryRow(ctx, `
 			WITH v AS (
-				UPDATE vehicles v SET status = 'en_route'
+				UPDATE vehicles v SET status = 'en_route', res = $3, charging_since = NULL
 				FROM trips t JOIN routes r ON r.id = t.route_id
 				WHERE t.id = $1 AND t.status = 'scheduled' AND v.id = t.vehicle_id
 					AND v.status IN ('idle', 'charging') AND v.depot_id = r.origin_depot_id
@@ -168,7 +175,7 @@ func (s *Store) StartScheduledTrip(ctx context.Context, tripID int64, startedAt 
 			)
 			UPDATE trips SET status = 'active', started_at = $2, start_res = v.res
 			FROM v WHERE trips.id = $1
-			RETURNING trips.start_res`, tripID, startedAt).Scan(&res)
+			RETURNING trips.start_res`, tripID, startedAt, resAt(v)).Scan(&res)
 	})
 
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -272,7 +279,7 @@ func (s *Store) CancelTrip(ctx context.Context, tripID int64, check func(Plan, T
 // lock vehicle row (FOR UPDATE) & loads its plan
 func lockPlan(ctx context.Context, tx pgx.Tx, vehicleID int64) (Plan, error) {
 	rows, _ := tx.Query(ctx, `
-		SELECT id, name, plate, type, status, depot_id, res
+		SELECT `+vehicleColumns+`
 		FROM vehicles WHERE id = $1 FOR UPDATE`, vehicleID)
 	v, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Vehicle])
 
@@ -325,4 +332,13 @@ func listPlanned(ctx context.Context, q querier, vehicleID *int64) ([]PlannedTri
 		return nil, fmt.Errorf("load planned trips: %w", err)
 	}
 	return trips, nil
+}
+
+// "a, b" -> "v.a, v.b"
+func qualified(alias, columns string) string {
+	parts := strings.Split(columns, ", ")
+	for i, p := range parts {
+		parts[i] = alias + "." + p
+	}
+	return strings.Join(parts, ", ")
 }

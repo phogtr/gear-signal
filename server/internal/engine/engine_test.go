@@ -58,7 +58,7 @@ func (f *fakeStore) SetTripETA(_ context.Context, id int64, eta time.Time) error
 	return nil
 }
 
-func (f *fakeStore) CompleteTrip(_ context.Context, id int64, _ time.Time, Res float64) error {
+func (f *fakeStore) CompleteTrip(_ context.Context, id int64, at time.Time, Res float64, charging bool) error {
 	if f.failNext {
 		f.failNext = false
 		return errors.New("db down")
@@ -68,6 +68,11 @@ func (f *fakeStore) CompleteTrip(_ context.Context, id int64, _ time.Time, Res f
 		t.Status = "completed"
 		if v := f.vehicle(t.VehicleID); v != nil {
 			v.Status = "idle"
+			v.ChargingSince = nil
+			if charging {
+				v.Status = "charging"
+				v.ChargingSince = &at
+			}
 			v.DepotID = f.route(t.RouteID).DestinationDepotID
 			v.Res = Res
 		}
@@ -105,13 +110,22 @@ func (f *fakeStore) ListScheduledReadyTrips(_ context.Context, now time.Time) ([
 	return out, nil
 }
 
-func (f *fakeStore) StartScheduledTrip(_ context.Context, id int64, startedAt time.Time) (float64, bool, error) {
+func (f *fakeStore) StopCharging(_ context.Context, id int64, res float64) error {
+	if v := f.vehicle(id); v.Status == "charging" {
+		v.Status, v.Res, v.ChargingSince = "idle", res, nil
+	}
+	return nil
+}
+
+func (f *fakeStore) StartScheduledTrip(_ context.Context, id int64, startedAt time.Time, resAt func(store.Vehicle) float64) (float64, bool, error) {
 	t := f.trip(id)
 	v := f.vehicle(t.VehicleID)
 	if t.Status != "scheduled" || (v.Status != "idle" && v.Status != "charging") || v.DepotID != f.route(t.RouteID).OriginDepotID {
 		return 0, false, nil
 	}
+	v.Res = resAt(*v)
 	v.Status = "en_route"
+	v.ChargingSince = nil
 	t.Status = "active"
 	t.StartedAt = &startedAt
 	t.StartRes = new(v.Res)
