@@ -6,7 +6,9 @@ import {
   SPEED_LIMIT,
   SPEED_MAX,
 } from "../constants/console";
+import { formatCountdown } from "./format";
 
+import type { Vehicle } from "./api/client";
 import type { VehicleState } from "./ws/types";
 
 export interface Threshold {
@@ -35,6 +37,41 @@ export const parseVehicleId = (param: string | null): number | null => {
   return param && Number.isInteger(id) && id > 0 ? id : null;
 };
 
+export const resLabel = (type: Vehicle["type"]) =>
+  type === "ev_van" ? "Battery" : "Fuel";
+
+export const resMetric = (type: Vehicle["type"], res: number): Metric => ({
+  label: resLabel(type),
+  value: percent(res),
+  unit: "%",
+  gauge: {
+    value: res * 100,
+    min: 0,
+    max: 100,
+    ...(type === "ev_van" && { threshold: BATTERY_LOW }),
+  },
+});
+
+export const resAt = ({ res, charging }: Vehicle, now: number): number => {
+  if (!charging) return res;
+
+  const since = Date.parse(charging.since);
+  const span = Date.parse(charging.until) - since;
+  if (span <= 0) return Math.max(res, charging.target);
+
+  const t = Math.min(Math.max((now - since) / span, 0), 1);
+  return res + (charging.target - res) * t;
+};
+
+// "to 90%, full in 2 min"
+export const chargeText = (
+  { charging }: Pick<Vehicle, "charging">,
+  now: number,
+): string =>
+  charging
+    ? `to ${Math.round(charging.target * 100)}%, full in ${formatCountdown(Date.parse(charging.until) - now)}`
+    : "";
+
 // units (m/s, 0..1 fractions, meters)
 export const metrics = (s: VehicleState, routeDistance: number): Metric[] => {
   const kmh = s.speed * 3.6; // m/s -> km/h
@@ -46,31 +83,8 @@ export const metrics = (s: VehicleState, routeDistance: number): Metric[] => {
       gauge: { value: kmh, min: 0, max: SPEED_MAX, threshold: SPEED_LIMIT },
     },
   ];
-  if (s.battery !== undefined) {
-    rows.push({
-      label: "Battery",
-      value: percent(s.battery),
-      unit: "%",
-      gauge: {
-        value: s.battery * 100,
-        min: 0,
-        max: 100,
-        threshold: BATTERY_LOW,
-      },
-    });
-  }
-  if (s.fuel !== undefined) {
-    rows.push({
-      label: "Fuel",
-      value: percent(s.fuel),
-      unit: "%",
-      gauge: {
-        value: s.fuel * 100,
-        min: 0,
-        max: 100,
-      },
-    });
-  }
+  if (s.battery !== undefined) rows.push(resMetric("ev_van", s.battery));
+  if (s.fuel !== undefined) rows.push(resMetric("diesel_truck", s.fuel));
   if (s.engineTemp !== undefined) {
     rows.push({
       label: "Engine temp",
@@ -84,7 +98,6 @@ export const metrics = (s: VehicleState, routeDistance: number): Metric[] => {
       },
     });
   }
-
   const remaining = Math.max(routeDistance - s.distance, 0);
   rows.push(
     {

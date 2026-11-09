@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -53,6 +53,52 @@ describe("VehicleDetail", () => {
     expect(row("Depot")).toHaveTextContent("DTLA Warehouse");
   });
 
+  it("shows a parked vehicle's stored level", () => {
+    render(
+      <VehicleDetail
+        vehicle={{
+          ...van("idle"),
+          type: "diesel_truck",
+          res: 0.42,
+        }}
+        depots={depots}
+        routes={routes}
+        alertByTripId={new Map()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(row("Fuel")).toHaveTextContent("42%");
+    expect(screen.queryByText("Charge")).not.toBeInTheDocument();
+  });
+
+  it("shows the level rising while charging", () => {
+    vi.useFakeTimers({ now: new Date("2026-11-08T10:01:30Z") });
+    render(
+      <VehicleDetail
+        vehicle={{
+          ...van("charging"),
+          res: 0.3,
+          charging: {
+            since: "2026-11-08T10:00:00Z",
+            until: "2026-11-08T10:03:00Z",
+            target: 0.9,
+          },
+        }}
+        depots={depots}
+        routes={routes}
+        alertByTripId={new Map()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(row("Battery")).toHaveTextContent("60%");
+    expect(row("Charge")).toHaveTextContent("to 90%, full in 2 min");
+
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(row("Battery")).toHaveTextContent("80%");
+    expect(row("Charge")).toHaveTextContent("to 90%, full in 30 s");
+    vi.useRealTimers();
+  });
+
   it("shows the live trip for a vehicle en route, in display units", () => {
     vi.useFakeTimers({ now: new Date("2026-10-16T09:00:00Z") });
     useSocketStore.setState({
@@ -68,6 +114,7 @@ describe("VehicleDetail", () => {
           degree: 180,
           progress: 0.25,
           done: false,
+          battery: 0.55,
         },
       ],
     });
@@ -95,6 +142,7 @@ describe("VehicleDetail", () => {
     expect(row("Progress")).toHaveTextContent("25%");
     expect(row("Speed")).toHaveTextContent("65 km/h"); // 18 × 3.6 = 64.8
     expect(row("Remaining")).toHaveTextContent("30.0 km");
+    expect(row("Battery")).toHaveTextContent("55%"); // the tick's, not the stored 80%
     expect(row("ETA")).toHaveTextContent("(in 28 min)");
     vi.useRealTimers();
   });

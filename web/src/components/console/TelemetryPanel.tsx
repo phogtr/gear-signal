@@ -8,7 +8,13 @@ import { SeverityLabel } from "./Severity";
 
 import { useSocketStore } from "../../lib/ws/socket";
 import { useNow } from "../../lib/useNow";
-import { metrics, type Metric } from "../../lib/console";
+import {
+  chargeText,
+  metrics,
+  resAt,
+  resMetric,
+  type Metric,
+} from "../../lib/console";
 import { formatClock, formatCountdown, routeLabel } from "../../lib/format";
 import type { ActiveAlert, AlertSeverity } from "../../lib/events";
 
@@ -80,6 +86,15 @@ export const TelemetryPanel = ({
         <p className="mt-1 text-sm text-muted-foreground">
           Pick an active vehicle to see its live telemetry
         </p>
+
+        {vehicle.status !== "en_route" && (
+          <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <MetricTile metric={resMetric(vehicle.type, resAt(vehicle, now))} />
+          </dl>
+        )}
+        {vehicle.charging && (
+          <p className="mt-2 text-sm">Charging {chargeText(vehicle, now)}</p>
+        )}
       </Panel>
     );
   }
@@ -111,6 +126,13 @@ export const TelemetryPanel = ({
       <p className="mt-0.5 text-sm text-muted-foreground">
         {routeLabel(route, depots)}
       </p>
+
+      {!live && vehicle.charging && (
+        <p className="mt-2 text-sm">
+          Now {Math.round(resAt(vehicle, now) * 100)}%, charging{" "}
+          {chargeText(vehicle, now)}
+        </p>
+      )}
 
       <div
         aria-hidden="true"

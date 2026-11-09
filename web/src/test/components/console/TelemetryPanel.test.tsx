@@ -24,6 +24,11 @@ vi.mock("../../../components/console/TelemetryCharts", () => ({
   ),
 }));
 
+const charging = {
+  since: "2026-11-08T10:00:00Z",
+  until: "2026-11-08T10:03:00Z",
+  target: 0.9,
+};
 const van = vehicle(5, "VAN-05");
 const truck = vehicle(7, "TRK-07", { type: "diesel_truck" });
 
@@ -215,6 +220,64 @@ describe("TelemetryPanel", () => {
       screen.queryByRole("list", { name: "Active alerts" }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("meter", { name: "Battery" })).toBeInTheDocument();
+  });
+
+  it("shows a parked vehicle's level as a gauge", () => {
+    renderPanel(
+      vehicle(4, "TRK-04", { status: "idle", type: "diesel_truck", res: 0.42 }),
+    );
+    expect(value("Fuel")).toHaveTextContent("42.0%");
+    expect(screen.getByRole("meter", { name: "Fuel" })).toHaveAttribute(
+      "aria-valuenow",
+      "42",
+    );
+    expect(screen.queryByText(/^Charging/)).not.toBeInTheDocument();
+  });
+
+  it("shows the level rising while a parked EV charges", () => {
+    vi.useFakeTimers({ now: new Date("2026-11-08T10:01:30Z") });
+    renderPanel(
+      vehicle(4, "VAN-04", {
+        status: "charging",
+        res: 0.3,
+        charging,
+      }),
+    );
+    expect(value("Battery")).toHaveTextContent("60.0%");
+    expect(
+      screen.getByText("Charging to 90%, full in 2 min"),
+    ).toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(value("Battery")).toHaveTextContent("80.0%");
+    expect(
+      screen.getByText("Charging to 90%, full in 30 s"),
+    ).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it("keeps a finished trip's values and says the EV is charging now", () => {
+    vi.useFakeTimers({ now: new Date("2026-11-08T10:01:30Z") });
+    useSocketStore.setState({
+      completed: {
+        5: {
+          at: "2026-11-08T10:00:00Z",
+          state: live(5, { done: true, speed: 0, battery: 0.3 }),
+        },
+      },
+    });
+    renderPanel({ ...van, status: "charging", res: 0.3, charging });
+
+    expect(value("Battery")).toHaveTextContent("30.0%");
+    expect(
+      screen.getByText("Now 60%, charging to 90%, full in 2 min"),
+    ).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+
+  it("shows no parked level while the first tick of a trip is on its way", () => {
+    renderPanel(vehicle(4, "VAN-04", { status: "en_route" }));
+    expect(screen.queryByRole("meter")).not.toBeInTheDocument();
   });
 
   it("explains when the vehicle isn't on a trip", () => {

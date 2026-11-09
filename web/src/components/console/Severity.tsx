@@ -37,7 +37,7 @@ export const SeverityLabel = ({
   const s = SEVERITY[severity];
   return (
     <span
-      className={`flex shrink-0 items-center gap-1 font-semibold ${s.className}`}
+      className={`relative flex shrink-0 items-center gap-1 font-semibold ${s.className}`}
     >
       <span aria-hidden="true" className="flex [&>svg]:size-3.5">
         {s.icon}

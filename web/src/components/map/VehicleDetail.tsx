@@ -5,6 +5,7 @@ import { SeverityLabel } from "../console/Severity";
 
 import { useSocketStore } from "../../lib/ws/socket";
 import { useNow } from "../../lib/useNow";
+import { chargeText, resAt, resLabel } from "../../lib/console";
 import { formatClock, formatCountdown, routeLabel } from "../../lib/format";
 
 import { VEHICLE_STATUSES, VEHICLE_TYPE_LABELS } from "../../constants/map";
@@ -60,12 +61,21 @@ export const VehicleDetail = ({
       ["Speed", `${Math.round(state.speed * 3.6)} km/h`],
       ["Remaining", `${(remaining / 1000).toFixed(1)} km`],
     );
+    const res = state.battery ?? state.fuel;
+    if (res !== undefined) {
+      rows.push([resLabel(vehicle.type), `${Math.round(res * 100)}%`]);
+    }
+
     if (eta) {
       const left = formatCountdown(eta.getTime() - now);
       rows.push(["ETA", `${formatClock(eta)} (in ${left})`]);
     }
   } else if (vehicle.status !== "en_route") {
-    rows.push(["Depot", depotName(vehicle.depotId) ?? "—"]);
+    rows.push(
+      ["Depot", depotName(vehicle.depotId) ?? "—"],
+      [resLabel(vehicle.type), `${Math.round(resAt(vehicle, now) * 100)}%`],
+    );
+    if (vehicle.charging) rows.push(["Charge", chargeText(vehicle, now)]);
   }
 
   return (

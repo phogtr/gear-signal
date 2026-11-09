@@ -1,14 +1,29 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  chargeText,
   chartSummary,
   decimals,
   gaugeFraction,
   gaugeText,
   metrics,
   parseVehicleId,
+  resAt,
+  resMetric,
 } from "../../lib/console";
+import type { Vehicle } from "../../lib/api/client";
 import type { VehicleState } from "../../lib/ws/types";
+
+const vehicle = (extra: Partial<Vehicle>): Vehicle => ({
+  id: 5,
+  name: "VAN-05",
+  plate: "8ABC123",
+  type: "ev_van",
+  status: "idle",
+  depotId: 1,
+  res: 0.8,
+  ...extra,
+});
 
 const state = (extra: Partial<VehicleState>): VehicleState => ({
   vehicleId: 5,
@@ -123,5 +138,79 @@ describe("charts", () => {
         Float64Array.of(61.4, 48.2, 77.6, 69),
       ),
     ).toBe("Speed, last 60 s: 48 to 78 km/h, now 69 km/h");
+  });
+});
+
+describe("resAt", () => {
+  const since = Date.parse("2026-11-08T10:00:00Z");
+  const charging = vehicle({
+    res: 0.3,
+    status: "charging",
+    charging: {
+      since: "2026-11-08T10:00:00Z",
+      until: "2026-11-08T10:03:00Z",
+      target: 0.9,
+    },
+  });
+
+  it("is the stored level when not charging", () => {
+    expect(resAt(vehicle({ res: 0.64 }), since)).toBe(0.64);
+  });
+
+  it("rises in a straight line while charging", () => {
+    expect(resAt(charging, since)).toBeCloseTo(0.3);
+    expect(resAt(charging, since + 90_000)).toBeCloseTo(0.6);
+    expect(resAt(charging, since + 180_000)).toBeCloseTo(0.9);
+  });
+
+  it("stays inside the window, e.g. while waiting for the unplug message", () => {
+    expect(resAt(charging, since - 5_000)).toBeCloseTo(0.3);
+    expect(resAt(charging, since + 600_000)).toBeCloseTo(0.9);
+  });
+
+  it("handles a window with no length", () => {
+    const zero = vehicle({
+      res: 0.95,
+      charging: {
+        since: "2026-11-08T10:00:00Z",
+        until: "2026-11-08T10:00:00Z",
+        target: 0.9,
+      },
+    });
+    expect(resAt(zero, since)).toBe(0.95);
+  });
+});
+
+describe("chargeText", () => {
+  const charging = {
+    since: "2026-11-08T10:00:00Z",
+    until: "2026-11-08T10:03:00Z",
+    target: 0.9,
+  };
+  const since = Date.parse(charging.since);
+
+  it("says the target and the time left", () => {
+    expect(chargeText({ charging }, since)).toBe("to 90%, full in 3 min");
+    expect(chargeText({ charging }, since + 170_000)).toBe(
+      "to 90%, full in 10 s",
+    );
+  });
+
+  it("is empty when not charging", () => {
+    expect(chargeText({}, since)).toBe("");
+  });
+});
+
+describe("resMetric", () => {
+  it("marks the low battery threshold on an EV", () => {
+    const m = resMetric("ev_van", 0.64);
+    expect(m).toMatchObject({ label: "Battery", value: "64.0", unit: "%" });
+    expect(m.gauge?.threshold?.value).toBe(20);
+  });
+
+  it("has no threshold on a truck", () => {
+    const m = resMetric("diesel_truck", 0.5);
+    expect(m.label).toBe("Fuel");
+    expect(m.gauge?.threshold).toBeUndefined();
   });
 });
