@@ -44,6 +44,7 @@ const vehicle = (
   type: "ev_van",
   status,
   depotId: 1,
+  res: 0.8,
 });
 const vehicles = [
   vehicle(12, "VAN-12", "idle"),

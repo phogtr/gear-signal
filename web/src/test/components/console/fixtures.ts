@@ -34,6 +34,7 @@ export const vehicle = (
   type: "ev_van",
   status: "en_route",
   depotId: 1,
+  res: 0.8,
   ...fields,
 });
 

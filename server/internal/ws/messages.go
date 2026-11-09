@@ -66,6 +66,10 @@ type AlertEvent struct {
 	TS        time.Time `json:"ts"`
 }
 
+type VehiclesChanged struct {
+	Type string `json:"type" tstype:"\"vehicles\""`
+}
+
 func NewAlertEvent(e store.Event) AlertEvent {
 	return AlertEvent{
 		Type:      "event",

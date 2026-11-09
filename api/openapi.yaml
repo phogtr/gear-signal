@@ -302,7 +302,7 @@ components:
 
     Vehicle:
       type: object
-      required: [id, name, plate, type, status, depotId]
+      required: [id, name, plate, type, status, depotId, res]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string, example: VAN-07 }
@@ -313,6 +313,24 @@ components:
           description: Depot where the vehicle is currently parked; changes when a trip completes.
           type: integer
           format: int64
+        res:
+          description: >
+            Battery (EV) or fuel (diesel), 0..1, as last stored: the level it left with while en
+            route (the live value is in the WS tick), the level at plug-in while charging.
+          type: number
+          format: double
+        charging: { $ref: "#/components/schemas/Charging" }
+
+    Charging:
+      description: >
+        Set only while charging. The level rises linearly from the vehicle's res at since to
+        target at until, when the vehicle is unplugged.
+      type: object
+      required: [since, until, target]
+      properties:
+        since: { type: string, format: date-time }
+        until: { type: string, format: date-time }
+        target: { type: number, format: double, description: "0..1" }
 
     Availability:
       type: object

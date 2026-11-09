@@ -211,6 +211,24 @@ export interface components {
              * @description Depot where the vehicle is currently parked; changes when a trip completes.
              */
             depotId: number;
+            /**
+             * Format: double
+             * @description Battery (EV) or fuel (diesel), 0..1, as last stored: the level it left with while en route (the live value is in the WS tick), the level at plug-in while charging.
+             */
+            res: number;
+            charging?: components["schemas"]["Charging"];
+        };
+        /** @description Set only while charging. The level rises linearly from the vehicle's res at since to target at until, when the vehicle is unplugged. */
+        Charging: {
+            /** Format: date-time */
+            since: string;
+            /** Format: date-time */
+            until: string;
+            /**
+             * Format: double
+             * @description 0..1
+             */
+            target: number;
         };
         Availability: {
             /** Format: int64 */

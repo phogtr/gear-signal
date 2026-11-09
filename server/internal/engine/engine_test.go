@@ -502,10 +502,13 @@ func TestVehicleTypeReachesTheSim(t *testing.T) {
 
 // records what was sent, in order
 type fakeWriter struct {
-	ticks  int
-	events []store.Event
-	order  []string
+	ticks           int
+	events          []store.Event
+	order           []string
+	vehiclesChanged int
 }
+
+func (w *fakeWriter) SendVehiclesChanged() { w.vehiclesChanged++ }
 
 func (w *fakeWriter) Send(time.Time, []sim.State) {
 	w.ticks++

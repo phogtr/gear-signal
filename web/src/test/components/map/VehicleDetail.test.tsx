@@ -29,6 +29,7 @@ const van = (status: Vehicle["status"]): Vehicle => ({
   type: "ev_van",
   status,
   depotId: 1,
+  res: 0.8,
 });
 
 const row = (label: string) => screen.getByText(label).nextElementSibling;

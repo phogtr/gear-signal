@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EVENT_CAP } from "../../../lib/events";
 import {
@@ -6,6 +6,8 @@ import {
   applyEvent,
   applyTick,
   backoff,
+  connectSocket,
+  useSocketStore,
 } from "../../../lib/ws/socket";
 import type { AlertEvent, Tick, VehicleState } from "../../../lib/ws/types";
 
@@ -111,5 +113,45 @@ describe("backoff", () => {
     expect([0, 1, 2, 3, 4, 5, 10].map(backoff)).toEqual([
       1000, 2000, 4000, 8000, 16_000, 30_000, 30_000,
     ]);
+  });
+});
+
+describe("connectSocket", () => {
+  class FakeSocket {
+    static last: FakeSocket;
+    onopen: (() => void) | null = null;
+    onmessage: ((e: { data: string }) => void) | null = null;
+    onclose: (() => void) | null = null;
+    constructor() {
+      FakeSocket.last = this;
+    }
+    close() {}
+  }
+
+  const callbacks = () => ({
+    onTripsChanged: vi.fn(),
+    onReconnect: vi.fn(),
+    onVehiclesChanged: vi.fn(),
+  });
+
+  beforeEach(() => {
+    vi.stubGlobal("WebSocket", FakeSocket);
+    useSocketStore.setState({ vehicles: [], completed: {}, events: [] });
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("reloads vehicles on a vehicles message without touching the tick state", () => {
+    const cb = callbacks();
+    const stop = connectSocket("ws://test", cb);
+    FakeSocket.last.onopen?.();
+    FakeSocket.last.onmessage?.({ data: JSON.stringify(tick(state(1))) });
+    const before = useSocketStore.getState().vehicles;
+
+    FakeSocket.last.onmessage?.({ data: '{"type":"vehicles"}' });
+
+    expect(cb.onVehiclesChanged).toHaveBeenCalledTimes(1);
+    expect(useSocketStore.getState().vehicles).toBe(before);
+    expect(cb.onTripsChanged).toHaveBeenCalledTimes(1); // the first tick only
+    stop();
   });
 });

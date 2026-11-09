@@ -31,6 +31,7 @@ type Store interface {
 type Sender interface {
 	Send(now time.Time, states []sim.State) // ws/hub.go
 	SendEvents(events []store.Event)        // ws/hub.go
+	SendVehiclesChanged()                   // ws/hub.go
 }
 
 const directorInterval = 5 * time.Second

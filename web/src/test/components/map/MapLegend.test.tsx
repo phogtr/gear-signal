@@ -12,6 +12,7 @@ const vehicle = (id: number, status: Vehicle["status"]): Vehicle => ({
   type: "ev_van",
   status,
   depotId: 1,
+  res: 0.8,
 });
 
 const rowOf = (label: string) => screen.getByText(label).closest("li")!;

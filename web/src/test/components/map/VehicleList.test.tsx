@@ -19,6 +19,7 @@ const vehicle = (
   type: id === 4 ? "diesel_truck" : "ev_van",
   status,
   depotId,
+  res: 0.8,
 });
 
 const depots: Depot[] = [

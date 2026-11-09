@@ -21,6 +21,8 @@ export const useSocket = () => {
 
     return connectSocket(socketUrl(), {
       onTripsChanged: refetchTrips,
+      onVehiclesChanged: () =>
+        queryClient.invalidateQueries({ queryKey: ["vehicles"] }),
       onReconnect: () => {
         refetchTrips();
         queryClient.invalidateQueries({ queryKey: ["events"] });

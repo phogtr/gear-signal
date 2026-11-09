@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 import { EVENT_CAP } from "../events";
 
-import type { AlertEvent, Tick, VehicleState } from "./types";
+import type { AlertEvent, Tick, VehicleState, VehiclesChanged } from "./types";
 
 export type SocketStatus = "connecting" | "live" | "offline";
 
@@ -31,11 +31,12 @@ export const useSocketStore = create<SocketState>(() => ({
 interface Callbacks {
   onTripsChanged: () => void;
   onReconnect: () => void;
+  onVehiclesChanged: () => void;
 }
 
 export const connectSocket = (
   url: string,
-  { onTripsChanged, onReconnect }: Callbacks,
+  { onTripsChanged, onReconnect, onVehiclesChanged }: Callbacks,
 ) => {
   let ws: WebSocket | null = null;
   let retry: ReturnType<typeof setTimeout> | undefined;
@@ -55,7 +56,11 @@ export const connectSocket = (
     };
 
     ws.onmessage = (e: MessageEvent<string>) => {
-      const msg = JSON.parse(e.data) as Tick | AlertEvent;
+      const msg = JSON.parse(e.data) as Tick | AlertEvent | VehiclesChanged;
+      if (msg.type === "vehicles") {
+        onVehiclesChanged();
+        return;
+      }
       if (msg.type === "event") {
         useSocketStore.setState((s) => ({ events: applyEvent(s.events, msg) }));
         return;

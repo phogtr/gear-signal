@@ -170,6 +170,15 @@ type Availability struct {
 	VehicleId int64 `json:"vehicleId"`
 }
 
+// Charging Set only while charging. The level rises linearly from the vehicle's res at since to target at until, when the vehicle is unplugged.
+type Charging struct {
+	Since time.Time `json:"since"`
+
+	// Target 0..1
+	Target float64   `json:"target"`
+	Until  time.Time `json:"until"`
+}
+
 // Depot defines model for Depot.
 type Depot struct {
 	Id  int64   `json:"id"`
@@ -285,6 +294,9 @@ type TripStatus string
 
 // Vehicle defines model for Vehicle.
 type Vehicle struct {
+	// Charging Set only while charging. The level rises linearly from the vehicle's res at since to target at until, when the vehicle is unplugged.
+	Charging *Charging `json:"charging,omitempty"`
+
 	// DepotId Depot where the vehicle is currently parked; changes when a trip completes.
 	DepotId int64 `json:"depotId"`
 	Id      int64 `json:"id"`
@@ -293,7 +305,10 @@ type Vehicle struct {
 	Name string `json:"name"`
 
 	// Plate Example: 8GSV123
-	Plate  string        `json:"plate"`
+	Plate string `json:"plate"`
+
+	// Res Battery (EV) or fuel (diesel), 0..1, as last stored: the level it left with while en route (the live value is in the WS tick), the level at plug-in while charging.
+	Res    float64       `json:"res"`
 	Status VehicleStatus `json:"status"`
 	Type   VehicleType   `json:"type"`
 }

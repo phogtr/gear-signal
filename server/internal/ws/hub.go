@@ -24,8 +24,8 @@ const (
 
 var upgrader = websocket.Upgrader{ReadBufferSize: 1024, WriteBufferSize: 4096}
 
-// Hub fans each tick out to every connected client. Each client gets a buffered
-// channel and its own writer goroutine, so one slow connection never blocks the engine
+// Hub fan each tick out to every client. Each client get a buffered
+// channel & its own writer goroutine
 type Hub struct {
 	mu      sync.Mutex
 	clients map[*client]struct{}
@@ -41,7 +41,6 @@ func NewHub() *Hub {
 	return &Hub{clients: map[*client]struct{}{}}
 }
 
-// encodes the tick once and queues it for every client without blocking
 func (h *Hub) Send(now time.Time, states []sim.State) {
 	msg, err := json.Marshal(NewTick(now, states))
 	if err != nil {
@@ -71,6 +70,18 @@ func (h *Hub) SendEvents(events []store.Event) {
 	for _, msg := range msgs {
 		h.broadcastLocked(msg)
 	}
+}
+
+// tell client refetch for vehicles done charging
+func (h *Hub) SendVehiclesChanged() {
+	msg, err := json.Marshal(VehiclesChanged{Type: "vehicles"})
+	if err != nil {
+		slog.Error("ws: encode vehicles changed", "err", err)
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.broadcastLocked(msg)
 }
 
 func (h *Hub) broadcastLocked(msg []byte) {

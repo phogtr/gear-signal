@@ -31,6 +31,7 @@ describe("tripLabels", () => {
       type: "ev_van",
       status: "idle",
       depotId: 1,
+      res: 0.8,
     },
   ];
   const depots: Depot[] = [

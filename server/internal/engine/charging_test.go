@@ -41,8 +41,8 @@ func TestResAtCharges60PercentPerSimHour(t *testing.T) {
 	if got := e.resAt(v, t0.Add(time.Minute)); math.Abs(got-50) > 1e-9 {
 		t.Errorf("after 1 min = %g, want 50", got)
 	}
-	if got := e.resAt(v, t0.Add(time.Hour)); got != chargeMax {
-		t.Errorf("after 1 h = %g, want the %g cap", got, chargeMax)
+	if got := e.resAt(v, t0.Add(time.Hour)); got != ChargeMax {
+		t.Errorf("after 1 h = %g, want the %g cap", got, ChargeMax)
 	}
 	if got := e.resAt(van(2, "idle", 1), t0.Add(time.Hour)); got != 80 {
 		t.Errorf("idle van = %g, want its stored 80", got)
@@ -78,7 +78,7 @@ func TestChargeUnplugsAtNinety(t *testing.T) {
 		t.Fatalf("85 unplugged too early: %+v", *fs.vehicle(8))
 	}
 	e.charge(context.Background(), t0.Add(20*time.Second))
-	if fs.vehicle(7).Status != "charging" || fs.vehicle(8).Status != "idle" || fs.vehicle(8).Res != chargeMax {
+	if fs.vehicle(7).Status != "charging" || fs.vehicle(8).Status != "idle" || fs.vehicle(8).Res != ChargeMax {
 		t.Fatalf("after 20 s: %+v / %+v", *fs.vehicle(7), *fs.vehicle(8))
 	}
 	e.charge(context.Background(), t0.Add(170*time.Second))
@@ -86,7 +86,7 @@ func TestChargeUnplugsAtNinety(t *testing.T) {
 		t.Fatalf("unplugged too early: %+v", *fs.vehicle(7))
 	}
 	e.charge(context.Background(), t0.Add(3*time.Minute))
-	if v := fs.vehicle(7); v.Status != "idle" || v.Res != chargeMax || v.ChargingSince != nil {
+	if v := fs.vehicle(7); v.Status != "idle" || v.Res != ChargeMax || v.ChargingSince != nil {
 		t.Errorf("after 3 min: %+v", *v)
 	}
 }
@@ -130,5 +130,39 @@ func TestLowTruckRefuelsOnArrival(t *testing.T) {
 	e.step(context.Background(), t0.Add(10*time.Minute))
 	if v := fs.vehicle(7); v.Status != "idle" || v.Res != 100 {
 		t.Errorf("truck parked as %s at %g, want idle at 100", v.Status, v.Res)
+	}
+}
+
+func TestChargedAtMatchesResAt(t *testing.T) {
+	e := &Engine{simSpeed: 20}
+	v := chargingVan(1, 30, t0)
+	at := ChargedAt(30, t0, 20)
+	// 60 points at 20 per real minute
+	if !at.Equal(t0.Add(3 * time.Minute)) {
+		t.Errorf("ChargedAt = %v, want 3 min after plug-in", at.Sub(t0))
+	}
+	if got := e.resAt(v, at); math.Abs(got-ChargeMax) > 1e-9 {
+		t.Errorf("resAt(ChargedAt) = %g, want %g", got, ChargeMax)
+	}
+	if got := e.resAt(v, at.Add(-time.Second)); got >= ChargeMax {
+		t.Errorf("a second earlier = %g, want below %g", got, ChargeMax)
+	}
+}
+
+func TestChargeTellsClientsOnlyWhenItUnplugs(t *testing.T) {
+	fs := &fakeStore{routes: []store.Route{route}, vehicles: []store.Vehicle{chargingVan(7, 85, t0)}}
+	w := &fakeWriter{}
+	e, err := New(context.Background(), fs, w, 20, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.charge(context.Background(), t0.Add(5*time.Second))
+	if w.vehiclesChanged != 0 {
+		t.Fatalf("sent %d before anything unplugged", w.vehiclesChanged)
+	}
+	e.charge(context.Background(), t0.Add(20*time.Second))
+	e.charge(context.Background(), t0.Add(25*time.Second))
+	if w.vehiclesChanged != 1 {
+		t.Errorf("sent %d, want 1 for the one unplug", w.vehiclesChanged)
 	}
 }

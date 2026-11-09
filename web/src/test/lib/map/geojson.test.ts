@@ -29,6 +29,7 @@ const vehicle = (
   type: "ev_van",
   status,
   depotId,
+  res: 0.8,
 });
 
 const route = (id: number, coordinates: [number, number][]): Route => ({

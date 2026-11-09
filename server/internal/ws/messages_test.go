@@ -58,3 +58,13 @@ func TestEventWireFormat(t *testing.T) {
 		t.Errorf("an event without a trip sends tripId: %s", b)
 	}
 }
+
+func TestVehiclesChangedWireFormat(t *testing.T) {
+	b, err := json.Marshal(VehiclesChanged{Type: "vehicles"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != `{"type":"vehicles"}` {
+		t.Errorf("got %s", b)
+	}
+}
