@@ -94,7 +94,7 @@ export interface paths {
         };
         get: operations["listTrips"];
         put?: never;
-        /** @description Schedules a trip after the vehicle's last scheduled or active trip. The route must start where the vehicle will be by then, and the start must not overlap the earlier trip's reserved time (its worst-case duration). */
+        /** @description Schedules a trip after the vehicle's last scheduled or active trip. The route must start where the vehicle will be by then, and the start must not overlap the earlier trip's reserved time (its worst-case duration). An EV's predicted battery at the start must cover the route plus a 15-point reserve. */
         post: operations["createTrip"];
         delete?: never;
         options?: never;
@@ -525,7 +525,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Start not in the future, wrong origin depot, or vehicle in maintenance */
+            /** @description Start not in the future, wrong origin depot, vehicle in maintenance, or not enough predicted battery */
             422: {
                 headers: {
                     [name: string]: unknown;

@@ -171,7 +171,7 @@ func (e *Engine) step(ctx context.Context, now time.Time) []sim.State {
 		}
 		// sim has already dropped the trip; if this write fails the trip stay
 		// active in DB & complete again on next boot
-		res, isCharge := park(e.vehicleTypes[st.VehicleID], resource(st))
+		res, isCharge := sim.Park(e.vehicleTypes[st.VehicleID], resource(st))
 		if err := e.store.CompleteTrip(ctx, st.TripID, now, res, isCharge); err != nil {
 			slog.Error("complete trip", "err", err)
 			continue
@@ -220,7 +220,9 @@ func (e *Engine) startScheduled(ctx context.Context, now time.Time) {
 
 	for _, t := range trips {
 		startedAt := now.Truncate(time.Microsecond)
-		res, started, err := e.store.StartScheduledTrip(ctx, t.ID, startedAt, func(v store.Vehicle) float64 { return e.resAt(v, startedAt) })
+		res, started, err := e.store.StartScheduledTrip(ctx, t.ID, startedAt, func(v store.Vehicle) float64 {
+			return sim.Charged(v.Res, v.ChargingSince, startedAt, e.simSpeed)
+		})
 		if err != nil {
 			slog.Error("scheduler", "err", err)
 			continue

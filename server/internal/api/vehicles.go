@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/phogtr/gear-signal/internal/api/gen"
-	"github.com/phogtr/gear-signal/internal/engine"
 	"github.com/phogtr/gear-signal/internal/schedule"
+	"github.com/phogtr/gear-signal/internal/sim"
 	"github.com/phogtr/gear-signal/internal/store"
 )
 
@@ -36,8 +36,8 @@ func toVehicle(v store.Vehicle, simSpeed float64) gen.Vehicle {
 	if v.ChargingSince != nil {
 		out.Charging = &gen.Charging{
 			Since:  v.ChargingSince.UTC(),
-			Until:  engine.ChargedAt(v.Res, *v.ChargingSince, simSpeed).UTC(),
-			Target: engine.ChargeMax / 100,
+			Until:  sim.ChargedAt(v.Res, *v.ChargingSince, simSpeed).UTC(),
+			Target: sim.ChargeMax / 100,
 		}
 	}
 	return out

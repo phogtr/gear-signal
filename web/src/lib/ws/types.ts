@@ -37,10 +37,6 @@ export interface AlertEvent {
   message: string;
   ts: string /* RFC 3339, UTC */;
 }
-/**
- * VehiclesChanged asks clients to reload parked vehicles: a charger unplugged
- * one, which no tick shows
- */
 export interface VehiclesChanged {
   type: "vehicles";
 }

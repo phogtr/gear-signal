@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/phogtr/gear-signal/internal/sim"
 	"github.com/phogtr/gear-signal/internal/store"
 )
 
@@ -17,8 +18,8 @@ func at(h, m int) time.Time { return time.Date(2026, 10, 17, h, m, 0, 0, time.UT
 // depot 1 -> 2 takes 900 s at free flow, so it reserves 1000 s (16 min 40 s)
 // plus the speed waves' ~15 s at SIM_SPEED 1
 var (
-	there        = store.Route{ID: 10, Name: "a-b", OriginDepotID: 1, DestinationDepotID: 2, DurationS: 900}
-	back         = store.Route{ID: 20, Name: "b-a", OriginDepotID: 2, DestinationDepotID: 1, DurationS: 1800}
+	there        = store.Route{ID: 10, Name: "a-b", OriginDepotID: 1, DestinationDepotID: 2, DurationS: 900, DistanceM: 41_000}  // EV: 16.4 points, needs 31.4
+	back         = store.Route{ID: 20, Name: "b-a", OriginDepotID: 2, DestinationDepotID: 1, DurationS: 1800, DistanceM: 61_000} // EV: 24.4 points, needs 39.4
 	reserveThere = Reserve(there.DurationS, 1)
 	reserveBack  = Reserve(back.DurationS, 1)
 )
@@ -26,7 +27,7 @@ var (
 func planned(id int64, r store.Route, start time.Time) store.PlannedTrip {
 	return store.PlannedTrip{
 		ID: id, Status: "scheduled", ScheduledStart: start,
-		OriginDepotID: r.OriginDepotID, DestinationDepotID: r.DestinationDepotID, DurationS: r.DurationS,
+		OriginDepotID: r.OriginDepotID, DestinationDepotID: r.DestinationDepotID, DurationS: r.DurationS, DistanceM: r.DistanceM,
 	}
 }
 
@@ -170,6 +171,111 @@ func TestCheckCreate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func withRes(p store.Plan, vehicleType string, res float64, chargingSince *time.Time) store.Plan {
+	p.Vehicle.Type, p.Vehicle.Res, p.Vehicle.ChargingSince = vehicleType, res, chargingSince
+	return p
+}
+
+// at SIM_SPEED 1 a charger adds 1 point per minute
+func TestPredictRes(t *testing.T) {
+	eta := at(16, 10)
+	endOfThere := at(17, 0).Add(reserveThere)
+	tests := []struct {
+		name         string
+		plan         store.Plan
+		at           time.Time
+		want         float64
+		wantCharging bool
+	}{
+		{"idle keeps its level", withRes(plan("idle", 1), sim.EVVan, 80, nil), at(18, 0), 80, false},
+		{"charging, now", withRes(plan("charging", 1), sim.EVVan, 30, new(at(15, 30))), now, 60, true},
+		{"charging, later", withRes(plan("charging", 1), sim.EVVan, 30, new(at(15, 30))), at(16, 10), 70, true},
+		{"charging stops at the cap", withRes(plan("charging", 1), sim.EVVan, 30, new(at(15, 30))), at(18, 0), 90, true},
+		{"charges until the first trip, then drains",
+			withRes(plan("charging", 1, planned(1, there, at(16, 10))), sim.EVVan, 30, new(at(15, 30))), at(18, 0), 53.6, false},
+		{"active trip drains from the level it left with",
+			withRes(plan("en_route", 1, active(1, there, at(15, 50), &eta)), sim.EVVan, 70, nil), at(18, 0), 53.6, false},
+		{"arrives below 40: charges from its ETA",
+			withRes(plan("en_route", 1, active(1, there, at(15, 50), &eta)), sim.EVVan, 50, nil), at(16, 20), 43.6, true},
+		{"arrives below 40: charges from the worst-case end",
+			withRes(plan("idle", 1, planned(1, there, at(17, 0))), sim.EVVan, 40, nil), endOfThere.Add(10 * time.Minute), 33.6, true},
+		{"not before it arrives",
+			withRes(plan("idle", 1, planned(1, there, at(17, 0))), sim.EVVan, 40, nil), endOfThere, 23.6, true},
+		{"a chain charges in each gap",
+			withRes(plan("en_route", 1, active(1, there, at(15, 50), &eta), planned(2, back, at(16, 40))), sim.EVVan, 50, nil),
+			at(16, 40).Add(reserveBack), 33.6 + 30 - 24.4, true},
+		{"never below 0",
+			withRes(plan("idle", 1, planned(1, there, at(17, 0))), sim.EVVan, 10, nil), endOfThere, 0, true},
+		{"truck refuels below 40",
+			withRes(plan("en_route", 1, active(1, there, at(15, 50), &eta)), sim.DieselTruck, 42, nil), at(18, 0), 100, false},
+		{"truck above 40 keeps its fuel",
+			withRes(plan("en_route", 1, active(1, there, at(15, 50), &eta)), sim.DieselTruck, 60, nil), at(18, 0), 60 - sim.Drain(sim.DieselTruck, 41_000), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, charging := predictRes(tt.plan, tt.at, now, 1)
+			if math.Abs(got-tt.want) > 1e-6 || charging != tt.wantCharging {
+				t.Errorf("predictRes = %g, %v; want %g, %v", got, charging, tt.want, tt.wantCharging)
+			}
+		})
+	}
+}
+
+func TestCheckCreateBattery(t *testing.T) {
+	eta := at(16, 10)
+	// arrives at 13.6 from 30, so 23.6 at 16:20 and 43.6 at 16:40
+	chain := withRes(plan("en_route", 1, active(1, there, at(15, 50), &eta)), sim.EVVan, 30, nil)
+	pluggedIn := func(res float64) store.Plan {
+		return withRes(plan("charging", 1), sim.EVVan, res, new(at(15, 59).Add(30*time.Second)))
+	}
+
+	tests := []struct {
+		name  string
+		plan  store.Plan
+		route store.Route
+		start time.Time
+		msg   string // empty when allowed
+	}{
+		{"idle with enough", withRes(plan("idle", 2), sim.EVVan, 39.5, nil), back, at(17, 0), ""},
+		{"idle, too low", withRes(plan("idle", 2), sim.EVVan, 39.3, nil), back, at(17, 0),
+			"VAN-07 will have 39% battery by then; route b-a needs 40%, including a 15% reserve"},
+		{"charging, too soon: 25.5 at 16:05", pluggedIn(20), there, at(16, 5),
+			"VAN-07 will have 25% battery by then; route a-b needs 32%, including a 15% reserve; pick a later start"},
+		{"charging, later: 35.5 at 16:15", pluggedIn(20), there, at(16, 15), ""},
+		{"chain, too soon", chain, back, at(16, 20), "will have 23% battery by then; route b-a needs 40%"},
+		{"chain, after charging in the gap", chain, back, at(16, 40), ""},
+		{"truck is not checked", withRes(plan("idle", 1), sim.DieselTruck, 5, nil), there, at(17, 0), ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := CheckCreate(tt.plan, tt.route, tt.start, now, 1)
+			if tt.msg == "" {
+				if err != nil {
+					t.Fatalf("want ok, got %v", err)
+				}
+				return
+			}
+			if kind(err) != ErrInvalid || !strings.Contains(err.Error(), tt.msg) {
+				t.Errorf("want invalid containing %q, got %v", tt.msg, err)
+			}
+		})
+	}
+
+	t.Run("a later start can't help an idle EV", func(t *testing.T) {
+		err := CheckCreate(withRes(plan("idle", 2), sim.EVVan, 39.3, nil), back, at(17, 0), now, 1)
+		if err == nil || strings.Contains(err.Error(), "later start") {
+			t.Errorf("got %v", err)
+		}
+	})
+
+	t.Run("an overlap is reported first", func(t *testing.T) {
+		low := withRes(plan("idle", 1, planned(1, there, at(17, 0))), sim.EVVan, 17, nil)
+		if err := CheckCreate(low, back, at(17, 10), now, 1); kind(err) != ErrConflict {
+			t.Errorf("want conflict, got %v", err)
+		}
+	})
 }
 
 func TestCheckCancel(t *testing.T) {

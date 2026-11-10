@@ -47,6 +47,7 @@ type PlannedTrip struct {
 	OriginDepotID      int64      `db:"origin_depot_id"`
 	DestinationDepotID int64      `db:"destination_depot_id"`
 	DurationS          int        `db:"duration_s"`
+	DistanceM          float64    `db:"distance_m"`
 }
 
 type Plan struct {
@@ -322,7 +323,7 @@ func (s *Store) ListPlans(ctx context.Context) ([]Plan, error) {
 func listPlanned(ctx context.Context, q querier, vehicleID *int64) ([]PlannedTrip, error) {
 	rows, _ := q.Query(ctx, `
 		SELECT t.id, t.vehicle_id, t.status, t.scheduled_start, t.started_at, t.eta,
-			r.origin_depot_id, r.destination_depot_id, r.duration_s
+			r.origin_depot_id, r.destination_depot_id, r.duration_s, r.distance_m
 		FROM trips t JOIN routes r ON r.id = t.route_id
 		WHERE ($1::bigint IS NULL OR t.vehicle_id = $1) AND t.status IN ('scheduled', 'active')
 		ORDER BY COALESCE(t.started_at, t.scheduled_start)`, vehicleID)
