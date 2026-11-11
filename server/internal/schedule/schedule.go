@@ -61,16 +61,17 @@ func FreeAt(trips []store.PlannedTrip, now time.Time, simSpeed float64) time.Tim
 	return end
 }
 
-// resource at `at`
-func predictRes(p store.Plan, at, now time.Time, simSpeed float64) (res float64, isCharge bool) {
+// resource after plan's trips
+func Predict(p store.Plan, now time.Time, simSpeed float64) (res float64, since *time.Time) {
 	v := p.Vehicle
 	res = v.Res
-	since := v.ChargingSince
+	since = v.ChargingSince
 	var end time.Time
 	for _, t := range p.Trips {
 		var start time.Time
 		start, end = span(t, end, now, simSpeed)
 		res = sim.Charged(res, since, start, simSpeed)
+		var isCharge bool
 		res, isCharge = sim.Park(v.Type, max(res-sim.Drain(v.Type, t.DistanceM), 0))
 		since = nil
 		if isCharge {
@@ -78,7 +79,7 @@ func predictRes(p store.Plan, at, now time.Time, simSpeed float64) (res float64,
 			since = &arrived
 		}
 	}
-	return sim.Charged(res, since, at, simSpeed), since != nil
+	return res, since
 }
 
 func CheckCreate(p store.Plan, r store.Route, start, now time.Time, simSpeed float64) error {
@@ -105,17 +106,38 @@ func CheckCreate(p store.Plan, r store.Route, start, now time.Time, simSpeed flo
 }
 
 func checkBattery(p store.Plan, r store.Route, start, now time.Time, simSpeed float64) error {
-	need := sim.Drain(p.Vehicle.Type, r.DistanceM) + batteryReserve
-	res, isCharge := predictRes(p, start, now, simSpeed)
+	need := BatteryNeed(r)
+	res, since := Predict(p, now, simSpeed)
+	res = sim.Charged(res, since, start, simSpeed)
 	if res >= need {
 		return nil
 	}
 	hint := ""
-	if isCharge {
+	if since != nil { // is charged
 		hint = "; pick a later start"
 	}
 	return invalid("%s will have %.0f%% battery by then; route %s needs %.0f%%, including a %.0f%% reserve%s",
 		p.Vehicle.Name, math.Floor(res), r.Name, math.Ceil(need), batteryReserve, hint)
+}
+
+func BatteryNeed(r store.Route) float64 {
+	return sim.Drain(sim.EVVan, r.DistanceM) + batteryReserve
+}
+
+func RouteStart(p store.Plan, r store.Route, now time.Time, simSpeed float64) (time.Time, bool) {
+	_, free := Available(p, now, simSpeed)
+	if p.Vehicle.Type != sim.EVVan {
+		return free, true
+	}
+	need := BatteryNeed(r)
+	res, since := Predict(p, now, simSpeed)
+	if sim.Charged(res, since, free, simSpeed) >= need {
+		return free, true
+	}
+	if since == nil || need > sim.ChargeMax {
+		return time.Time{}, false
+	}
+	return sim.ChargedAt(res, need, *since, simSpeed).Truncate(time.Second).Add(time.Second), true
 }
 
 // where vehicle's next trip must start, & its earliest time

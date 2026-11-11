@@ -34,13 +34,17 @@ func toVehicle(v store.Vehicle, simSpeed float64) gen.Vehicle {
 		Res:     v.Res / 100,
 	}
 	if v.ChargingSince != nil {
-		out.Charging = &gen.Charging{
-			Since:  v.ChargingSince.UTC(),
-			Until:  sim.ChargedAt(v.Res, *v.ChargingSince, simSpeed).UTC(),
-			Target: sim.ChargeMax / 100,
-		}
+		out.Charging = toCharging(v.Res, *v.ChargingSince, simSpeed)
 	}
 	return out
+}
+
+func toCharging(res float64, since time.Time, simSpeed float64) *gen.Charging {
+	return &gen.Charging{
+		Since:  since.UTC(),
+		Until:  sim.ChargedAt(res, sim.ChargeMax, since, simSpeed).UTC(),
+		Target: sim.ChargeMax / 100,
+	}
 }
 
 func (s *Server) ListAvailable(ctx context.Context, _ gen.ListAvailableRequestObject) (gen.ListAvailableResponseObject, error) {
@@ -48,12 +52,49 @@ func (s *Server) ListAvailable(ctx context.Context, _ gen.ListAvailableRequestOb
 	if err != nil {
 		return nil, err
 	}
+	routes, err := s.store.ListRoutes(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	now := time.Now()
 	resp := make(gen.ListAvailable200JSONResponse, len(plans))
 	for i, p := range plans {
-		depotID, at := schedule.Available(p, now, s.simSpeed)
-		resp[i] = gen.Availability{VehicleId: p.Vehicle.ID, DepotId: depotID, AvailableAt: at.UTC()}
+		resp[i] = toAvailability(p, routes, now, s.simSpeed)
 	}
 	return resp, nil
+}
+
+func toAvailability(p store.Plan, routes []store.Route, now time.Time, simSpeed float64) gen.Availability {
+	v := p.Vehicle
+	depotID, at := schedule.Available(p, now, simSpeed)
+	res, since := schedule.Predict(p, now, simSpeed)
+	out := gen.Availability{
+		VehicleId:   v.ID,
+		DepotId:     depotID,
+		AvailableAt: at.UTC(),
+		Res:         res / 100,
+		Routes:      []gen.RouteAvailability{},
+	}
+
+	if since != nil {
+		out.Charging = toCharging(res, *since, simSpeed)
+	}
+	if v.Status == "maintenance" {
+		return out
+	}
+	for _, r := range routes {
+		if r.OriginDepotID != depotID {
+			continue
+		}
+		ra := gen.RouteAvailability{RouteId: r.ID}
+		if v.Type == sim.EVVan {
+			ra.Need = new(schedule.BatteryNeed(r) / 100)
+		}
+		if start, ok := schedule.RouteStart(p, r, now, simSpeed); ok {
+			ra.EarliestAt = new(start.UTC())
+		}
+		out.Routes = append(out.Routes, ra)
+	}
+	return out
 }

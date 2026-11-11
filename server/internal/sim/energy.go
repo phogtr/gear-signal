@@ -34,7 +34,7 @@ func Charged(res float64, since *time.Time, now time.Time, simSpeed float64) flo
 	return min(res+chargePerHour*simHours, max(res, ChargeMax))
 }
 
-func ChargedAt(res float64, since time.Time, simSpeed float64) time.Time {
-	simHours := max(ChargeMax-res, 0) / chargePerHour
+func ChargedAt(res, target float64, since time.Time, simSpeed float64) time.Time {
+	simHours := max(target-res, 0) / chargePerHour
 	return since.Add(time.Duration(simHours / simSpeed * float64(time.Hour)))
 }

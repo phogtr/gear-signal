@@ -52,10 +52,28 @@ const vehicles = [
   vehicle(36, "TRK-08", "maintenance"),
 ];
 const availability: Availability[] = [
-  { vehicleId: 12, depotId: 1, availableAt: "2026-10-22T16:04:10Z" },
+  {
+    vehicleId: 12,
+    depotId: 1,
+    availableAt: "2026-10-22T16:04:10Z",
+    res: 0.8,
+    routes: [],
+  },
   // still driving to LAX, then free there
-  { vehicleId: 18, depotId: 2, availableAt: "2026-10-22T16:28:06.5Z" },
-  { vehicleId: 36, depotId: 1, availableAt: "2026-10-22T16:04:10Z" },
+  {
+    vehicleId: 18,
+    depotId: 2,
+    availableAt: "2026-10-22T16:28:06.5Z",
+    res: 0.8,
+    routes: [],
+  },
+  {
+    vehicleId: 36,
+    depotId: 1,
+    availableAt: "2026-10-22T16:04:10Z",
+    res: 0.8,
+    routes: [],
+  },
 ];
 
 const renderForm = (

@@ -218,7 +218,7 @@ export interface components {
             res: number;
             charging?: components["schemas"]["Charging"];
         };
-        /** @description Set only while charging. The level rises linearly from the vehicle's res at since to target at until, when the vehicle is unplugged. */
+        /** @description Set only while charging. The level rises linearly from the res beside it at since to target at until, when the vehicle is unplugged. */
         Charging: {
             /** Format: date-time */
             since: string;
@@ -243,6 +243,28 @@ export interface components {
              * @description Earliest start for a new trip: now, or when the vehicle's last planned trip can be done. The start must also be strictly after the request time.
              */
             availableAt: string;
+            /**
+             * Format: double
+             * @description Predicted battery or fuel level after the planned trips, 0..1; at plug-in if charging is set, so the level at any later time comes from charging.
+             */
+            res: number;
+            charging?: components["schemas"]["Charging"];
+            /** @description The routes leaving depotId; empty for a vehicle in maintenance. */
+            routes: components["schemas"]["RouteAvailability"][];
+        };
+        RouteAvailability: {
+            /** Format: int64 */
+            routeId: number;
+            /**
+             * Format: double
+             * @description Battery an EV must have at the start, route plus reserve, 0..1. Not set for trucks.
+             */
+            need?: number;
+            /**
+             * Format: date-time
+             * @description Earliest start for this route: availableAt, or later if an EV must charge first. Not set when the battery can never cover the route. The start must also be strictly after the request time.
+             */
+            earliestAt?: string;
         };
         /** @enum {string} */
         TripStatus: "scheduled" | "active" | "completed" | "cancelled";

@@ -34,13 +34,17 @@ func TestCharged(t *testing.T) {
 }
 
 func TestChargedAtMatchesCharged(t *testing.T) {
-	at := ChargedAt(30, t0, 20)
+	at := ChargedAt(30, ChargeMax, t0, 20)
 	if want := t0.Add(3 * time.Minute); !at.Equal(want) {
 		t.Errorf("ChargedAt = %v, want %v", at, want)
 	}
 	near(t, "level then", Charged(30, &t0, at, 20), ChargeMax, 1e-9)
 	if got := Charged(30, &t0, at.Add(-time.Second), 20); got >= ChargeMax {
 		t.Errorf("a second earlier = %g, want below %g", got, ChargeMax)
+	}
+	near(t, "to a lower target", Charged(30, &t0, ChargedAt(30, 40, t0, 20), 20), 40, 1e-9)
+	if got := ChargedAt(50, 40, t0, 20); !got.Equal(t0) {
+		t.Errorf("already there = %v, want %v", got, t0)
 	}
 }
 

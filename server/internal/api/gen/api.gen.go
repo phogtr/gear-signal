@@ -165,12 +165,21 @@ type Availability struct {
 	// AvailableAt Earliest start for a new trip: now, or when the vehicle's last planned trip can be done. The start must also be strictly after the request time.
 	AvailableAt time.Time `json:"availableAt"`
 
+	// Charging Set only while charging. The level rises linearly from the res beside it at since to target at until, when the vehicle is unplugged.
+	Charging *Charging `json:"charging,omitempty"`
+
 	// DepotId Depot where the vehicle will be after its planned trips; a new trip's route must leave it.
-	DepotId   int64 `json:"depotId"`
-	VehicleId int64 `json:"vehicleId"`
+	DepotId int64 `json:"depotId"`
+
+	// Res Predicted battery or fuel level after the planned trips, 0..1; at plug-in if charging is set, so the level at any later time comes from charging.
+	Res float64 `json:"res"`
+
+	// Routes The routes leaving depotId; empty for a vehicle in maintenance.
+	Routes    []RouteAvailability `json:"routes"`
+	VehicleId int64               `json:"vehicleId"`
 }
 
-// Charging Set only while charging. The level rises linearly from the vehicle's res at since to target at until, when the vehicle is unplugged.
+// Charging Set only while charging. The level rises linearly from the res beside it at since to target at until, when the vehicle is unplugged.
 type Charging struct {
 	Since time.Time `json:"since"`
 
@@ -246,6 +255,16 @@ type Route struct {
 	OriginDepotId int64  `json:"originDepotId"`
 }
 
+// RouteAvailability defines model for RouteAvailability.
+type RouteAvailability struct {
+	// EarliestAt Earliest start for this route: availableAt, or later if an EV must charge first. Not set when the battery can never cover the route. The start must also be strictly after the request time.
+	EarliestAt *time.Time `json:"earliestAt,omitempty"`
+
+	// Need Battery an EV must have at the start, route plus reserve, 0..1. Not set for trucks.
+	Need    *float64 `json:"need,omitempty"`
+	RouteId int64    `json:"routeId"`
+}
+
 // TelemetryPoint defines model for TelemetryPoint.
 type TelemetryPoint struct {
 	// Battery 0..1, EVs only
@@ -294,7 +313,7 @@ type TripStatus string
 
 // Vehicle defines model for Vehicle.
 type Vehicle struct {
-	// Charging Set only while charging. The level rises linearly from the vehicle's res at since to target at until, when the vehicle is unplugged.
+	// Charging Set only while charging. The level rises linearly from the res beside it at since to target at until, when the vehicle is unplugged.
 	Charging *Charging `json:"charging,omitempty"`
 
 	// DepotId Depot where the vehicle is currently parked; changes when a trip completes.

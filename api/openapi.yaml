@@ -324,7 +324,7 @@ components:
 
     Charging:
       description: >
-        Set only while charging. The level rises linearly from the vehicle's res at since to
+        Set only while charging. The level rises linearly from the res beside it at since to
         target at until, when the vehicle is unplugged.
       type: object
       required: [since, until, target]
@@ -335,7 +335,7 @@ components:
 
     Availability:
       type: object
-      required: [vehicleId, depotId, availableAt]
+      required: [vehicleId, depotId, availableAt, res, routes]
       properties:
         vehicleId: { type: integer, format: int64 }
         depotId:
@@ -346,6 +346,34 @@ components:
           description: >
             Earliest start for a new trip: now, or when the vehicle's last planned trip can be done.
             The start must also be strictly after the request time.
+          type: string
+          format: date-time
+        res:
+          description: >
+            Predicted battery or fuel level after the planned trips, 0..1; at plug-in if charging is
+            set, so the level at any later time comes from charging.
+          type: number
+          format: double
+        charging:
+          $ref: "#/components/schemas/Charging"
+        routes:
+          description: The routes leaving depotId; empty for a vehicle in maintenance.
+          type: array
+          items: { $ref: "#/components/schemas/RouteAvailability" }
+
+    RouteAvailability:
+      type: object
+      required: [routeId]
+      properties:
+        routeId: { type: integer, format: int64 }
+        need:
+          description: Battery an EV must have at the start, route plus reserve, 0..1. Not set for trucks.
+          type: number
+          format: double
+        earliestAt:
+          description: >
+            Earliest start for this route: availableAt, or later if an EV must charge first. Not set
+            when the battery can never cover the route. The start must also be strictly after the request time.
           type: string
           format: date-time
 

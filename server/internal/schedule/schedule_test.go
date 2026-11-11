@@ -215,9 +215,69 @@ func TestPredictRes(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, charging := predictRes(tt.plan, tt.at, now, 1)
-			if math.Abs(got-tt.want) > 1e-6 || charging != tt.wantCharging {
-				t.Errorf("predictRes = %g, %v; want %g, %v", got, charging, tt.want, tt.wantCharging)
+			res, since := Predict(tt.plan, now, 1)
+			got := sim.Charged(res, since, tt.at, 1)
+			if math.Abs(got-tt.want) > 1e-6 || (since != nil) != tt.wantCharging {
+				t.Errorf("level = %g, since %v; want %g, charging %v", got, since, tt.want, tt.wantCharging)
+			}
+		})
+	}
+}
+
+func TestRouteStart(t *testing.T) {
+	eta := at(16, 10)
+	tests := []struct {
+		name  string
+		plan  store.Plan
+		route store.Route
+		want  time.Time // zero: the battery never covers it
+	}{
+		{"idle with enough: now", withRes(plan("idle", 1), sim.EVVan, 80, nil), there, now},
+		{"idle, too low: never", withRes(plan("idle", 2), sim.EVVan, 39.3, nil), back, time.Time{}},
+		{"charging with enough: now", withRes(plan("charging", 1), sim.EVVan, 40, new(at(15, 59))), there, now},
+		// 20 -> 31.4 at 1 point per minute: 11 min 24 s after plug-in
+		{"charging, too low: when it has enough", withRes(plan("charging", 1), sim.EVVan, 20, new(at(16, 0))), there,
+			at(16, 11).Add(24 * time.Second)},
+		// arrives at 13.6, 39.4 needs 25 min 48 s more
+		{"chain, too low on arrival: when it has enough",
+			withRes(plan("en_route", 1, active(1, there, at(15, 50), &eta)), sim.EVVan, 30, nil), back,
+			at(16, 35).Add(48 * time.Second)},
+		{"chain with enough on arrival: when free",
+			withRes(plan("en_route", 1, active(1, there, at(15, 50), &eta)), sim.EVVan, 80, nil), back, eta},
+		{"truck: when free, whatever its fuel", withRes(plan("idle", 1), sim.DieselTruck, 5, nil), there, now},
+		{"more than a charge can give: never",
+			withRes(plan("charging", 1), sim.EVVan, 20, new(at(16, 0))),
+			store.Route{ID: 30, Name: "far", OriginDepotID: 1, DestinationDepotID: 2, DistanceM: 200_000}, time.Time{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := RouteStart(tt.plan, tt.route, now, 1)
+			if ok != !tt.want.IsZero() {
+				t.Fatalf("RouteStart = %v, %v; want %v", got, ok, tt.want)
+			}
+			if d := got.Sub(tt.want); d < 0 || d > time.Second {
+				t.Errorf("RouteStart = %v, want %v (up to 1 s later)", got, tt.want)
+			}
+
+			// the form trusts this: POST /trips must agree on both sides of it
+			start := got
+			if !start.After(now) {
+				start = now.Add(time.Nanosecond)
+			}
+			if !ok {
+				start = at(23, 0)
+			}
+			err := CheckCreate(tt.plan, tt.route, start, now, 1)
+			if ok && err != nil {
+				t.Errorf("CheckCreate at the earliest start: %v", err)
+			}
+			if !ok && kind(err) != ErrInvalid {
+				t.Errorf("never covered, but CheckCreate = %v", err)
+			}
+			if earlier := got.Add(-1100 * time.Millisecond); ok && got.After(now) && earlier.After(FreeAt(tt.plan.Trips, now, 1)) {
+				if err := CheckCreate(tt.plan, tt.route, earlier, now, 1); kind(err) != ErrInvalid {
+					t.Errorf("1.1 s earlier, CheckCreate = %v, want invalid", err)
+				}
 			}
 		})
 	}
