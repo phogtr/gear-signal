@@ -120,6 +120,14 @@ func checkBattery(p store.Plan, r store.Route, start, now time.Time, simSpeed fl
 		p.Vehicle.Name, math.Floor(res), r.Name, math.Ceil(need), batteryReserve, hint)
 }
 
+func Departure(v store.Vehicle, r store.Route, now time.Time, simSpeed float64) (float64, bool) {
+	res := sim.Charged(v.Res, v.ChargingSince, now, simSpeed)
+	if v.ChargingSince == nil || v.Type != sim.EVVan {
+		return res, true
+	}
+	return res, res >= BatteryNeed(r)
+}
+
 func BatteryNeed(r store.Route) float64 {
 	return sim.Drain(sim.EVVan, r.DistanceM) + batteryReserve
 }

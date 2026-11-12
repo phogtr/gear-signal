@@ -10,22 +10,23 @@ import (
 
 	"github.com/phogtr/gear-signal/internal/alert"
 	"github.com/phogtr/gear-signal/internal/geo"
+	"github.com/phogtr/gear-signal/internal/schedule"
 	"github.com/phogtr/gear-signal/internal/sim"
 	"github.com/phogtr/gear-signal/internal/store"
 )
 
 type Store interface {
-	ListRoutes(ctx context.Context) ([]store.Route, error)                                                                               // store/routes.go
-	ListTrips(ctx context.Context, f store.TripFilter) ([]store.Trip, error)                                                             // store/trips.go
-	ListVehicles(ctx context.Context) ([]store.Vehicle, error)                                                                           // store/vehicles.go
-	StartTrip(ctx context.Context, vehicleID, routeID int64, startedAt time.Time) (int64, float64, error)                                // store/trips.go
-	ListScheduledReadyTrips(ctx context.Context, now time.Time) ([]store.Trip, error)                                                    // store/trips.go
-	StartScheduledTrip(ctx context.Context, tripID int64, startedAt time.Time, resAt func(store.Vehicle) float64) (float64, bool, error) // store/trips.go
-	SetTripETA(ctx context.Context, tripID int64, eta time.Time) error                                                                   // store/trips.go
-	CompleteTrip(ctx context.Context, tripID int64, completedAt time.Time, res float64, isCharge bool) error                             // store/trips.go
-	StopCharging(ctx context.Context, vehicleID int64, res float64) error                                                                // store/vehicles.go
-	InsertEvents(ctx context.Context, events []store.Event) error                                                                        // store/events.go
-	InsertTelemetry(ctx context.Context, rows []store.Telemetry) error                                                                   // store/telemetry.go
+	ListRoutes(ctx context.Context) ([]store.Route, error)                                                                                                     // store/routes.go
+	ListTrips(ctx context.Context, f store.TripFilter) ([]store.Trip, error)                                                                                   // store/trips.go
+	ListVehicles(ctx context.Context) ([]store.Vehicle, error)                                                                                                 // store/vehicles.go
+	StartTrip(ctx context.Context, vehicleID, routeID int64, startedAt time.Time) (int64, float64, error)                                                      // store/trips.go
+	ListScheduledReadyTrips(ctx context.Context, now time.Time) ([]store.Trip, error)                                                                          // store/trips.go
+	StartScheduledTrip(ctx context.Context, tripID int64, startedAt time.Time, depart func(store.Vehicle, store.Route) (float64, bool)) (float64, bool, error) // store/trips.go
+	SetTripETA(ctx context.Context, tripID int64, eta time.Time) error                                                                                         // store/trips.go
+	CompleteTrip(ctx context.Context, tripID int64, completedAt time.Time, res float64, isCharge bool) error                                                   // store/trips.go
+	StopCharging(ctx context.Context, vehicleID int64, res float64) error                                                                                      // store/vehicles.go
+	InsertEvents(ctx context.Context, events []store.Event) error                                                                                              // store/events.go
+	InsertTelemetry(ctx context.Context, rows []store.Telemetry) error                                                                                         // store/telemetry.go
 }
 
 type Sender interface {
@@ -50,6 +51,7 @@ type Engine struct {
 	rng            *rand.Rand
 	telemetry      []store.Telemetry
 	simSpeed       float64
+	waiting        map[int64]bool // logging
 }
 
 // loads the routes and resumes every active trip from its started_at.
@@ -218,11 +220,25 @@ func (e *Engine) startScheduled(ctx context.Context, now time.Time) {
 		return
 	}
 
+	waiting := map[int64]bool{}
 	for _, t := range trips {
 		startedAt := now.Truncate(time.Microsecond)
-		res, started, err := e.store.StartScheduledTrip(ctx, t.ID, startedAt, func(v store.Vehicle) float64 {
-			return sim.Charged(v.Res, v.ChargingSince, startedAt, e.simSpeed)
+		var short bool
+
+		res, started, err := e.store.StartScheduledTrip(ctx, t.ID, startedAt, func(v store.Vehicle, r store.Route) (float64, bool) {
+			res, ok := schedule.Departure(v, r, startedAt, e.simSpeed)
+			if !ok {
+				short = true
+				if !e.waiting[t.ID] {
+					slog.Info("trip wait for charge", "trip", t.ID, "vehicle", v.ID,
+						"res", fmt.Sprintf("%.1f", res), "need", fmt.Sprintf("%.1f", schedule.BatteryNeed(r)))
+				}
+			}
+			return res, ok
 		})
+		if short {
+			waiting[t.ID] = true
+		}
 		if err != nil {
 			slog.Error("scheduler", "err", err)
 			continue
@@ -231,6 +247,7 @@ func (e *Engine) startScheduled(ctx context.Context, now time.Time) {
 			e.launch(ctx, sim.Trip{ID: t.ID, VehicleID: t.VehicleID, VehicleType: e.vehicleTypes[t.VehicleID], RouteID: t.RouteID, StartedAt: startedAt, Res: res / 100})
 		}
 	}
+	e.waiting = waiting
 }
 
 func (e *Engine) direct(ctx context.Context, now time.Time) {

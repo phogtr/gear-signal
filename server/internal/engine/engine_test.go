@@ -117,13 +117,14 @@ func (f *fakeStore) StopCharging(_ context.Context, id int64, res float64) error
 	return nil
 }
 
-func (f *fakeStore) StartScheduledTrip(_ context.Context, id int64, startedAt time.Time, resAt func(store.Vehicle) float64) (float64, bool, error) {
+func (f *fakeStore) StartScheduledTrip(_ context.Context, id int64, startedAt time.Time, depart func(store.Vehicle, store.Route) (float64, bool)) (float64, bool, error) {
 	t := f.trip(id)
 	v := f.vehicle(t.VehicleID)
-	if t.Status != "scheduled" || (v.Status != "idle" && v.Status != "charging") || v.DepotID != f.route(t.RouteID).OriginDepotID {
+	res, ok := depart(*v, f.route(t.RouteID))
+	if !ok || t.Status != "scheduled" || (v.Status != "idle" && v.Status != "charging") || v.DepotID != f.route(t.RouteID).OriginDepotID {
 		return 0, false, nil
 	}
-	v.Res = resAt(*v)
+	v.Res = res
 	v.Status = "en_route"
 	v.ChargingSince = nil
 	t.Status = "active"

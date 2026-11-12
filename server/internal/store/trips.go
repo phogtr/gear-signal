@@ -152,9 +152,10 @@ func (s *Store) ListScheduledReadyTrips(ctx context.Context, now time.Time) ([]T
 	return pgx.CollectRows(rows, pgx.RowToStructByName[Trip])
 }
 
-// update idle/charging & scheduled, vehicle status to en-route;
-// and update vehicle's trip status to active
-func (s *Store) StartScheduledTrip(ctx context.Context, tripID int64, startedAt time.Time, resAt func(Vehicle) float64) (res float64, started bool, err error) {
+// update idle/charging & scheduled,
+// vehicle status to en-route & trip status to active.
+// Trip stay scheduled if not enough battery
+func (s *Store) StartScheduledTrip(ctx context.Context, tripID int64, startedAt time.Time, depart func(Vehicle, Route) (float64, bool)) (res float64, started bool, err error) {
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		rows, _ := tx.Query(ctx, `
 			SELECT `+qualified("v", vehicleColumns)+`
@@ -164,6 +165,20 @@ func (s *Store) StartScheduledTrip(ctx context.Context, tripID int64, startedAt 
 		v, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Vehicle])
 		if err != nil {
 			return err
+		}
+
+		var r Route
+		err = tx.QueryRow(ctx, `
+			SELECT r.id, r.name, r.origin_depot_id, r.destination_depot_id, r.distance_m, r.duration_s
+			FROM trips t JOIN routes r ON r.id = t.route_id WHERE t.id = $1`, tripID,
+		).Scan(&r.ID, &r.Name, &r.OriginDepotID, &r.DestinationDepotID, &r.DistanceM, &r.DurationS)
+		if err != nil {
+			return err
+		}
+
+		departRes, ok := depart(v, r)
+		if !ok {
+			return pgx.ErrNoRows
 		}
 
 		return tx.QueryRow(ctx, `
@@ -176,7 +191,7 @@ func (s *Store) StartScheduledTrip(ctx context.Context, tripID int64, startedAt 
 			)
 			UPDATE trips SET status = 'active', started_at = $2, start_res = v.res
 			FROM v WHERE trips.id = $1
-			RETURNING trips.start_res`, tripID, startedAt, resAt(v)).Scan(&res)
+			RETURNING trips.start_res`, tripID, startedAt, departRes).Scan(&res)
 	})
 
 	if errors.Is(err, pgx.ErrNoRows) {

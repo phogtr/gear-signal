@@ -370,3 +370,28 @@ func TestCheckCancel(t *testing.T) {
 		})
 	}
 }
+
+// at SIM_SPEED 1 a charger adds 1 point per minute; there needs 31.4
+func TestDeparture(t *testing.T) {
+	plugged := new(at(15, 30))
+	tests := []struct {
+		name    string
+		vehicle store.Vehicle
+		want    float64
+		wantOK  bool
+	}{
+		{"charging with enough leaves with the charge so far", store.Vehicle{Type: sim.EVVan, Status: "charging", Res: 10, ChargingSince: plugged}, 40, true},
+		{"charging, short: waits", store.Vehicle{Type: sim.EVVan, Status: "charging", Res: 0, ChargingSince: plugged}, 30, false},
+		// waiting wouldn't help: it isn't plugged in
+		{"idle, short: leaves", store.Vehicle{Type: sim.EVVan, Status: "idle", Res: 20}, 20, true},
+		{"truck: leaves", store.Vehicle{Type: sim.DieselTruck, Status: "idle", Res: 5}, 5, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := Departure(tt.vehicle, there, now, 1)
+			if math.Abs(got-tt.want) > 1e-9 || ok != tt.wantOK {
+				t.Errorf("Departure = %g, %v; want %g, %v", got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}

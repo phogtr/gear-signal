@@ -82,6 +82,42 @@ func TestScheduledTripLeavesWithTheChargeSoFar(t *testing.T) {
 	}
 }
 
+// e.g. SIM_SPEED was lowered after the trip was planned
+func TestScheduledTripWaitsForCharge(t *testing.T) {
+	long := route
+	long.DistanceM = 25_000 // needs 10 + 15 points
+	fs := &fakeStore{
+		routes:   []store.Route{long},
+		vehicles: []store.Vehicle{chargingVan(7, 5, t0)},
+		trips:    []store.Trip{scheduledTrip(1, 7, 1, t0.Add(10*time.Second))},
+	}
+	e, err := New(context.Background(), fs, nil, 20, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 20x: 1 point every 3 s, so 25 at 60 s
+	for _, s := range []int{10, 30, 59} {
+		e.startScheduled(context.Background(), t0.Add(time.Duration(s)*time.Second))
+		if fs.trip(1).Status != "scheduled" || fs.vehicle(7).Status != "charging" {
+			t.Fatalf("left after %d s: %+v", s, *fs.vehicle(7))
+		}
+	}
+	if !e.waiting[1] {
+		t.Error("waiting trip not tracked, so it would log every tick")
+	}
+
+	e.startScheduled(context.Background(), t0.Add(61*time.Second))
+	if got := fs.trip(1).StartRes; fs.trip(1).Status != "active" || got == nil || math.Abs(*got-25.33) > 0.01 {
+		t.Fatalf("trip %+v, want active from ~25.33", *fs.trip(1))
+	}
+	if v := fs.vehicle(7); v.Status != "en_route" || v.ChargingSince != nil {
+		t.Errorf("vehicle still plugged in: %+v", *v)
+	}
+	if len(e.waiting) != 0 {
+		t.Errorf("waiting = %v after it left", e.waiting)
+	}
+}
+
 func TestLowTruckRefuelsOnArrival(t *testing.T) {
 	trip := activeTrip(1, 7, t0)
 	trip.StartRes = new(39.0)
