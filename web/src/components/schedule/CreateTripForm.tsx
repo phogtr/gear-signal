@@ -1,7 +1,11 @@
 import { useRef, useState, type FormEvent } from "react";
 
+import {
+  defaultStart,
+  earliestStart,
+  toDateTimeLocalInput,
+} from "../../lib/schedule";
 import { formatWhen, routeLabel } from "../../lib/format";
-import { defaultStart, earliestStart, toLocalInput } from "../../lib/schedule";
 import { useNow } from "../../lib/useNow";
 
 import type {
@@ -29,6 +33,8 @@ interface Errors {
   start?: string;
 }
 
+const toPercent = (fraction = 0) => `${Math.round(fraction * 100)}%`;
+
 const select =
   "w-full px-3 py-2 rounded-md border border-input bg-background shadow-xs text-sm disabled:opacity-50 aria-invalid:border-danger";
 
@@ -54,16 +60,28 @@ export const CreateTripForm = ({
   const startRef = useRef<HTMLInputElement>(null);
 
   const depotName = (id: number) =>
-    depots.find((d) => d.id === id)?.name ?? "—";
+    depots.find((d) => d.id === id)?.name ?? "-";
+  const vehicleName = (id: number) =>
+    vehicles.find((v) => v.id === id)?.name ?? `Vehicle ${id}`;
+
   const availableById = new Map(availability?.map((a) => [a.vehicleId, a]));
   const chosen = availableById.get(Number(vehicleId));
   const routeOptions = chosen
     ? routes.filter((r) => r.originDepotId === chosen.depotId)
     : [];
-  const minStart = chosen ? earliestStart(chosen.availableAt, now) : undefined;
+  const byRouteId = new Map(chosen?.routes.map((r) => [r.routeId, r]));
+  const picked = byRouteId.get(Number(routeId));
+
+  const vehicleMin = chosen
+    ? earliestStart(chosen.availableAt, now)
+    : undefined;
+  const startFrom = picked?.earliestAt ?? chosen?.availableAt;
+  const minStart = startFrom ? earliestStart(startFrom, now) : undefined;
+  const isWaitForCharge =
+    minStart !== undefined && vehicleMin !== undefined && minStart > vehicleMin;
 
   const vehicleOption = (v: Vehicle) => {
-    if (v.status === "maintenance") return `${v.name} — in maintenance`;
+    if (v.status === "maintenance") return `${v.name} - in maintenance`;
 
     const a = availableById.get(v.id);
     if (!a) return v.name;
@@ -71,8 +89,26 @@ export const CreateTripForm = ({
     const at = Date.parse(a.availableAt);
     const where = depotName(a.depotId);
     return at > now + 60_000
-      ? `${v.name} — ${where} from ${formatWhen(at, now)}`
-      : `${v.name} — ${where}`;
+      ? `${v.name} - ${where} from ${formatWhen(at, now)}`
+      : `${v.name} - ${where}`;
+  };
+
+  const routeOption = (r: Route) => {
+    const label = `${routeLabel(r, depots)} · ${(r.distance / 1000).toFixed(0)} km`;
+    const ra = byRouteId.get(r.id);
+
+    // unlikely fallback
+    if (!ra || vehicleMin === undefined) return { label, disabled: false };
+    if (!ra.earliestAt)
+      return {
+        label: `${label} - not enough battery, needs ${toPercent(ra.need)}`,
+        disabled: true,
+      };
+
+    const at = earliestStart(ra.earliestAt, now);
+    return at > vehicleMin
+      ? { label: `${label} - from ${formatWhen(at, now)}`, disabled: false }
+      : { label, disabled: false };
   };
 
   const chooseVehicle = (id: string) => {
@@ -81,9 +117,23 @@ export const CreateTripForm = ({
     const a = availableById.get(Number(id));
     // oxlint-disable-next-line react/purity -- event handler, not render
     const t = Date.now();
-    // convert to input type datetime-local
-    setStart(a ? toLocalInput(defaultStart(a.availableAt, t)) : "");
+    setStart(a ? toDateTimeLocalInput(defaultStart(a.availableAt, t)) : "");
     setErrors({});
+  };
+
+  const chooseRoute = (id: string) => {
+    setRouteId(id);
+    setErrors((prev) => ({ ...prev, route: undefined }));
+
+    const earliestAt = byRouteId.get(Number(id))?.earliestAt;
+    if (!earliestAt) return;
+    // oxlint-disable-next-line react/purity -- event handler, not render
+    const t = Date.now();
+    const at = Date.parse(start);
+    if (Number.isNaN(at) || at < earliestStart(earliestAt, t)) {
+      setStart(toDateTimeLocalInput(defaultStart(earliestAt, t)));
+      setErrors((prev) => ({ ...prev, start: undefined }));
+    }
   };
 
   const handleSubmit = (e: FormEvent) => {
@@ -98,10 +148,14 @@ export const CreateTripForm = ({
 
     if (chosen) {
       // re-check current time, form may have opened a while
-      const min = earliestStart(chosen.availableAt, t);
+      const aMin = earliestStart(chosen.availableAt, t);
+      const min = earliestStart(picked?.earliestAt ?? chosen.availableAt, t);
       if (Number.isNaN(at)) errs.start = "Pick a departure time";
       else if (at < min)
-        errs.start = `Pick a departure at or after ${formatWhen(min, t)}`;
+        errs.start =
+          min > aMin
+            ? `Pick a departure at or after ${formatWhen(min, t)}, when ${vehicleName(chosen.vehicleId)} has enough battery`
+            : `Pick a departure at or after ${formatWhen(min, t)}`;
     }
 
     setErrors(errs);
@@ -124,10 +178,8 @@ export const CreateTripForm = ({
     });
   };
 
-  const describedBy = (id: string, hasHint: boolean, hasError: boolean) =>
-    [hasHint && `${id}-hint`, hasError && `${id}-error`]
-      .filter(Boolean)
-      .join(" ") || undefined;
+  const describedBy = (...ids: (string | false | undefined)[]) =>
+    ids.filter(Boolean).join(" ") || undefined;
 
   return (
     <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -148,14 +200,13 @@ export const CreateTripForm = ({
           id="trip-vehicle"
           ref={vehicleRef}
           value={vehicleId}
-          // dialog focus this on open, disabled would focus Cancel;
+          // dialog focus this on open, disabled would focus Cancel
           autoFocus
           aria-busy={!availability}
           aria-invalid={Boolean(errors.vehicle)}
           aria-describedby={describedBy(
-            "trip-vehicle",
-            Boolean(chosen),
-            Boolean(errors.vehicle),
+            chosen && "trip-vehicle-hint",
+            errors.vehicle && "trip-vehicle-error",
           )}
           onChange={(e) => chooseVehicle(e.target.value)}
           className={select}
@@ -200,24 +251,23 @@ export const CreateTripForm = ({
           disabled={!chosen}
           aria-invalid={Boolean(errors.route)}
           aria-describedby={describedBy(
-            "trip-route",
-            Boolean(chosen),
-            Boolean(errors.route),
+            chosen && "trip-route-hint",
+            errors.route && "trip-route-error",
           )}
-          onChange={(e) => {
-            setRouteId(e.target.value);
-            setErrors((prev) => ({ ...prev, route: undefined }));
-          }}
+          onChange={(e) => chooseRoute(e.target.value)}
           className={select}
         >
           <option value="">
             {chosen ? "Choose a route" : "Choose a vehicle first"}
           </option>
-          {routeOptions.map((r) => (
-            <option key={r.id} value={r.id}>
-              {routeLabel(r, depots)} · {(r.distance / 1000).toFixed(0)} km
-            </option>
-          ))}
+          {routeOptions.map((r) => {
+            const { label, disabled } = routeOption(r);
+            return (
+              <option key={r.id} value={r.id} disabled={disabled}>
+                {label}
+              </option>
+            );
+          })}
         </select>
 
         {chosen && (
@@ -241,13 +291,12 @@ export const CreateTripForm = ({
           ref={startRef}
           type="datetime-local"
           value={start}
-          min={minStart ? toLocalInput(minStart) : undefined}
+          min={minStart ? toDateTimeLocalInput(minStart) : undefined}
           disabled={!chosen}
           aria-invalid={Boolean(errors.start)}
           aria-describedby={describedBy(
-            "trip-start",
-            Boolean(minStart),
-            Boolean(errors.start),
+            minStart !== undefined && "trip-start-hint",
+            errors.start && "trip-start-error",
           )}
           onChange={(e) => {
             setStart(e.target.value);
@@ -257,7 +306,10 @@ export const CreateTripForm = ({
         />
         {minStart && (
           <p id="trip-start-hint" className="text-xs text-muted-foreground">
-            Earliest {formatWhen(minStart, now)}, your local time.
+            Earliest {formatWhen(minStart, now)}, your local time
+            {isWaitForCharge &&
+              chosen &&
+              `, once ${vehicleName(chosen.vehicleId)} has charged enough for this route`}
           </p>
         )}
         {errors.start && (

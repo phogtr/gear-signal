@@ -20,7 +20,7 @@ export const tripLabels = (
     vehicle: (id) => vehicleById.get(id) ?? `Vehicle ${id}`,
     route: (id) => {
       const r = routeById.get(id);
-      return r ? routeLabel(r, depots) : "—";
+      return r ? routeLabel(r, depots) : "-";
     },
   };
 };
@@ -48,7 +48,7 @@ export const earliestStart = (availableAt: string, now: number): number =>
 export const defaultStart = (availableAt: string, now: number): number =>
   ceilToMinute(Math.max(Date.parse(availableAt), now + MINUTE));
 
-export const toLocalInput = (ms: number): string => {
+export const toDateTimeLocalInput = (ms: number): string => {
   const d = new Date(ms);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };

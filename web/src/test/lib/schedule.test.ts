@@ -8,7 +8,7 @@ import {
   departureText,
   earliestStart,
   lastOfChains,
-  toLocalInput,
+  toDateTimeLocalInput,
   tripLabels,
 } from "../../lib/schedule";
 
@@ -58,7 +58,7 @@ describe("tripLabels", () => {
 
   it("falls back for unknown ids", () => {
     expect(labels.vehicle(9)).toBe("Vehicle 9");
-    expect(labels.route(9)).toBe("—");
+    expect(labels.route(9)).toBe("-");
   });
 });
 
@@ -124,7 +124,7 @@ describe("start times for the create form", () => {
   });
 
   it("formats local time for datetime-local and parses back to the same instant", () => {
-    const value = toLocalInput(Date.parse("2026-10-22T16:05:00Z"));
+    const value = toDateTimeLocalInput(Date.parse("2026-10-22T16:05:00Z"));
     expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
     expect(new Date(value).getTime()).toBe(Date.parse("2026-10-22T16:05:00Z"));
   });

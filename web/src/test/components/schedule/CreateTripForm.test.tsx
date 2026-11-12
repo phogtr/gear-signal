@@ -10,7 +10,7 @@ import type {
   Route,
   Vehicle,
 } from "../../../lib/api/client";
-import { toLocalInput } from "../../../lib/schedule";
+import { toDateTimeLocalInput } from "../../../lib/schedule";
 
 const NOW = Date.parse("2026-10-22T16:04:10Z");
 
@@ -37,11 +37,12 @@ const vehicle = (
   id: number,
   name: string,
   status: Vehicle["status"],
+  type: Vehicle["type"] = "ev_van",
 ): Vehicle => ({
   id,
   name,
   plate: "P",
-  type: "ev_van",
+  type,
   status,
   depotId: 1,
   res: 0.8,
@@ -49,8 +50,13 @@ const vehicle = (
 const vehicles = [
   vehicle(12, "VAN-12", "idle"),
   vehicle(18, "VAN-18", "en_route"),
-  vehicle(36, "TRK-08", "maintenance"),
+  vehicle(36, "TRK-08", "maintenance", "diesel_truck"),
+  vehicle(20, "VAN-20", "charging"),
+  vehicle(21, "VAN-21", "idle"),
+  vehicle(40, "TRK-03", "idle", "diesel_truck"),
 ];
+const at = (iso: string) => Date.parse(iso);
+const inMin = (min: number) => new Date(NOW + min * 60_000).toISOString();
 const availability: Availability[] = [
   {
     vehicleId: 12,
@@ -73,6 +79,39 @@ const availability: Availability[] = [
     availableAt: "2026-10-22T16:04:10Z",
     res: 0.8,
     routes: [],
+  },
+  // plugged in now at 20%, 1 point a minute: 25% at 16:09:10, 27.4% at 16:11:34
+  {
+    vehicleId: 20,
+    depotId: 1,
+    availableAt: inMin(0),
+    res: 0.2,
+    charging: { since: inMin(0), until: inMin(70), target: 0.9 },
+    routes: [
+      { routeId: 7, need: 0.25, earliestAt: inMin(5) },
+      { routeId: 5, need: 0.274, earliestAt: inMin(7.4) },
+    ],
+  },
+  // idle at 30%, no charger: the 45% route is never possible
+  {
+    vehicleId: 21,
+    depotId: 1,
+    availableAt: inMin(0),
+    res: 0.3,
+    routes: [
+      { routeId: 7, need: 0.25, earliestAt: inMin(0) },
+      { routeId: 5, need: 0.45 },
+    ],
+  },
+  {
+    vehicleId: 40,
+    depotId: 1,
+    availableAt: inMin(0),
+    res: 0.1,
+    routes: [
+      { routeId: 7, earliestAt: inMin(0) },
+      { routeId: 5, earliestAt: inMin(0) },
+    ],
   },
 ];
 
@@ -106,12 +145,12 @@ describe("CreateTripForm", () => {
   it("lists every vehicle with where it will be, and disables maintenance", () => {
     renderForm();
     const options = screen.getAllByRole("option").map((o) => o.textContent);
-    expect(options).toContain("VAN-12 — DTLA Warehouse");
+    expect(options).toContain("VAN-12 - DTLA Warehouse");
     expect(options.find((o) => o?.startsWith("VAN-18"))).toMatch(
-      /^VAN-18 — LAX Cargo from /,
+      /^VAN-18 - LAX Cargo from /,
     );
     expect(
-      screen.getByRole("option", { name: "TRK-08 — in maintenance" }),
+      screen.getByRole("option", { name: "TRK-08 - in maintenance" }),
     ).toBeDisabled();
   });
 
@@ -142,8 +181,8 @@ describe("CreateTripForm", () => {
 
     // availableAt 16:28:06.5 rounds up to 16:29
     const at = Date.parse("2026-10-22T16:29:00Z");
-    expect(field("Departure")).toHaveValue(toLocalInput(at));
-    expect(field("Departure")).toHaveAttribute("min", toLocalInput(at));
+    expect(field("Departure")).toHaveValue(toDateTimeLocalInput(at));
+    expect(field("Departure")).toHaveAttribute("min", toDateTimeLocalInput(at));
   });
 
   it("flags missing fields, focusing the first one", async () => {
@@ -164,7 +203,7 @@ describe("CreateTripForm", () => {
     await user.clear(field("Departure"));
     await user.type(
       field("Departure"),
-      toLocalInput(Date.parse("2026-10-22T16:20:00Z")),
+      toDateTimeLocalInput(Date.parse("2026-10-22T16:20:00Z")),
     );
     await user.click(screen.getByRole("button", { name: "Schedule trip" }));
 
@@ -187,6 +226,102 @@ describe("CreateTripForm", () => {
       vehicleId: 12,
       routeId: 7,
       scheduledStart: "2026-10-22T16:06:00.000Z",
+    });
+  });
+
+  describe("battery", () => {
+    const routeOptions = () =>
+      [...(field("Route") as HTMLSelectElement).options].slice(1);
+
+    it("marks routes a charging EV must wait for", async () => {
+      const { user } = renderForm();
+      await user.selectOptions(field("Vehicle"), "20");
+      const [first, second] = routeOptions();
+      // earliest starts round up to the minute: 16:10 and 16:12
+      expect(first.textContent).toMatch(
+        /^DTLA Warehouse → LAX Cargo · 25 km - from /,
+      );
+      expect(second.textContent).toMatch(/ · 31 km - from /);
+      expect(first).toBeEnabled();
+    });
+
+    it("disables a route the battery can never cover, and says why", async () => {
+      const { user } = renderForm();
+      await user.selectOptions(field("Vehicle"), "21");
+      const [short, long] = routeOptions();
+      expect(short.textContent).toBe("DTLA Warehouse → LAX Cargo · 25 km");
+      expect(short).toBeEnabled();
+      expect(long.textContent).toBe(
+        "DTLA Warehouse → DTLA Warehouse · 31 km - not enough battery, needs 45%",
+      );
+      expect(long).toBeDisabled();
+    });
+
+    it("raises the departure to the route's earliest start, and says why", async () => {
+      const { user } = renderForm();
+      await user.selectOptions(field("Vehicle"), "20");
+      expect(field("Departure")).toHaveValue(
+        toDateTimeLocalInput(at("2026-10-22T16:06:00Z")),
+      );
+
+      await user.selectOptions(field("Route"), "7");
+      const earliest = toDateTimeLocalInput(at("2026-10-22T16:10:00Z"));
+      expect(field("Departure")).toHaveValue(earliest);
+      expect(field("Departure")).toHaveAttribute("min", earliest);
+      expect(field("Departure")).toHaveAccessibleDescription(
+        /your local time, once VAN-20 has charged enough for this route$/,
+      );
+    });
+
+    it("keeps a later departure", async () => {
+      const { user } = renderForm();
+      await user.selectOptions(field("Vehicle"), "20");
+      await user.clear(field("Departure"));
+      const later = toDateTimeLocalInput(at("2026-10-22T16:30:00Z"));
+      await user.type(field("Departure"), later);
+      await user.selectOptions(field("Route"), "7");
+
+      expect(field("Departure")).toHaveValue(later);
+    });
+
+    it("rejects a departure before the battery is ready", async () => {
+      const { user, onSubmit } = renderForm();
+      await user.selectOptions(field("Vehicle"), "20");
+      await user.selectOptions(field("Route"), "7");
+      await user.clear(field("Departure"));
+      await user.type(
+        field("Departure"),
+        toDateTimeLocalInput(at("2026-10-22T16:08:00Z")),
+      );
+      await user.click(screen.getByRole("button", { name: "Schedule trip" }));
+
+      expect(onSubmit).not.toHaveBeenCalled();
+      expect(field("Departure")).toHaveAccessibleDescription(
+        /Pick a departure at or after .*, when VAN-20 has enough battery$/,
+      );
+      expect(field("Departure")).toHaveFocus();
+    });
+
+    it("submits at the route's earliest start", async () => {
+      const { user, onSubmit } = renderForm();
+      await user.selectOptions(field("Vehicle"), "20");
+      await user.selectOptions(field("Route"), "7");
+      await user.click(screen.getByRole("button", { name: "Schedule trip" }));
+      expect(onSubmit).toHaveBeenCalledWith({
+        vehicleId: 20,
+        routeId: 7,
+        scheduledStart: "2026-10-22T16:10:00.000Z",
+      });
+    });
+
+    it("says nothing about battery for a truck", async () => {
+      const { user } = renderForm();
+      await user.selectOptions(field("Vehicle"), "40");
+      expect(routeOptions().every((o) => !o.disabled)).toBe(true);
+      await user.selectOptions(field("Route"), "5");
+      expect(field("Route")).toHaveAccessibleDescription(
+        "Routes leaving DTLA Warehouse",
+      );
     });
   });
 

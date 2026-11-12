@@ -52,7 +52,10 @@ export const resMetric = (type: Vehicle["type"], res: number): Metric => ({
   },
 });
 
-export const resAt = ({ res, charging }: Vehicle, now: number): number => {
+export const resAt = (
+  { res, charging }: Pick<Vehicle, "res" | "charging">,
+  now: number,
+): number => {
   if (!charging) return res;
 
   const since = Date.parse(charging.since);

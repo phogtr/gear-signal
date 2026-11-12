@@ -83,9 +83,6 @@ export const SchedulePage = () => {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">Schedule</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Trips planned ahead, on the road, and recently finished
-          </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <SourceFilter
