@@ -13,7 +13,7 @@ import type { MovingVehicle } from "./motion";
 type Point = [lng: number, lat: number];
 
 const EARTH_CIRCUMFERENCE = 40_075_016.686; // 2 × π × 6,378,137
-const METERS_PER_DEGREE_LAT = 111_320; // EARTH_CIRCUMFERENCE / 360 -> 2πR / 360 = πR / 180
+export const METERS_PER_DEGREE_LAT = 111_320; // EARTH_CIRCUMFERENCE / 360 -> 2πR / 360 = πR / 180
 const TILE_SIZE_PX = 512; // MapLibre's tile size
 
 // ground distance cover by one screen pixel at a zoom level & latitude
@@ -117,7 +117,7 @@ export const liveVehiclesToGeoJSON = (
 //     depot ●──────┼──────→ east
 //             meters·cos(θ)
 //
-// inverse of `toLocal` in `geo.go`
+// inverse of `toLocal` (geo.go)
 // x = dLng × (π/180) × cos(lat) × R -> dLng × METERS_PER_DEGREE × cos(lat)
 const offset = ([lng, lat]: Point, meters: number, angle: number): Point => {
   // degree of lat is same (METERS_PER_DEGREE_LAT)

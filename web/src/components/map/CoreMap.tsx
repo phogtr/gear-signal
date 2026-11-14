@@ -20,8 +20,8 @@ import {
   parkedVehiclesToGeoJSON,
   routesToGeoJSON,
 } from "../../lib/map/geojson";
-import { makeMotion } from "../../lib/map/motion";
-import { isInView, overlayPadding } from "../../lib/map/view";
+import { makeMotion, type MovingVehicle } from "../../lib/map/motion";
+import { isInView, needsRedraw, overlayPadding } from "../../lib/map/view";
 import { makePolyline, type Polyline } from "../../lib/map/polyline";
 import { themeColor } from "../../lib/theme";
 
@@ -82,6 +82,7 @@ export const CoreMap = ({
   const polylinesRef = useRef(new Map<number, Polyline>());
   const onSelectRef = useRef(onSelect);
   const alertsRef = useRef(alertByTripId);
+  const isStaleRef = useRef(true);
 
   // create the map once; MapLibre owns this DOM node from here on
   useEffect(() => {
@@ -93,6 +94,7 @@ export const CoreMap = ({
       center: LA,
       zoom: 9.5,
       attributionControl: false,
+      fadeDuration: 0, // default 300ms
     });
     // credits (OpenFreeMap, OpenMapTiles, OpenStreetMap)
     map.addControl(new AttributionControl({ compact: true }));
@@ -138,12 +140,14 @@ export const CoreMap = ({
 
   useEffect(() => {
     alertsRef.current = alertByTripId;
+    isStaleRef.current = true;
   }, [alertByTripId]);
 
   useEffect(() => {
     polylinesRef.current = new Map(
       routes.map((r) => [r.id, makePolyline(r.coordinates)]),
     );
+    isStaleRef.current = true;
   }, [routes]);
 
   useEffect(() => {
@@ -161,22 +165,30 @@ export const CoreMap = ({
     const isMotion = !matchMedia("(prefers-reduced-motion: reduce)").matches;
     let frame = 0;
     let isDrawEmpty = false;
+    let drawn: MovingVehicle[] = [];
 
-    const draw = () => {
+    const draw = (isForced: boolean) => {
       const isEmpty = motion.size() === 0;
       if (isEmpty && isDrawEmpty) return; // nothing move, skip idle setData call
 
-      isDrawEmpty = isEmpty;
-      source?.setData(
-        liveVehiclesToGeoJSON(
-          motion.positions(performance.now(), polylinesRef.current, isMotion),
-          alertsRef.current,
-        ),
+      const next = motion.positions(
+        performance.now(),
+        polylinesRef.current,
+        isMotion,
       );
+      const isForcedNow = isForced || isStaleRef.current;
+      if (!isForcedNow && !needsRedraw(drawn, next, map.getZoom())) return;
+
+      isDrawEmpty = isEmpty;
+      isStaleRef.current = false;
+      drawn = next;
+      source?.setData(liveVehiclesToGeoJSON(next, alertsRef.current));
     };
 
+    let isTick = true;
     const loop = () => {
-      draw();
+      draw(isTick);
+      isTick = false;
       frame = requestAnimationFrame(loop);
     };
 
@@ -185,11 +197,12 @@ export const CoreMap = ({
     const unsubscribe = useSocketStore.subscribe((s, prev) => {
       if (s.vehicles === prev.vehicles) return;
       motion.update(s.vehicles, performance.now());
-      if (!isMotion) draw();
+      isTick = true;
+      if (!isMotion) draw(true);
     });
 
     if (isMotion) loop();
-    else draw();
+    else draw(true);
 
     return () => {
       cancelAnimationFrame(frame);
