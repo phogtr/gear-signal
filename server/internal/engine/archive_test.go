@@ -12,9 +12,12 @@ import (
 func ptr(v float64) *float64 { return &v }
 
 func TestTelemetryRow(t *testing.T) {
-	ev := telemetryRow(t0, sim.State{VehicleID: 7, TripID: 3, Lat: 34.05, Lng: -118.25, Degree: 90, Speed: 25, Battery: ptr(0.5)})
+	ev := telemetryRow(t0, sim.State{VehicleID: 7, TripID: 3, Lat: 34.05, Lng: -118.25, Degree: 90, Distance: 1234.5, Speed: 25, Battery: ptr(0.5)})
 	if ev.TS != t0 || ev.VehicleID != 7 || ev.TripID != 3 || ev.Lat != 34.05 || ev.Lon != -118.25 || ev.HeadingDeg != 90 {
 		t.Errorf("identity and position not copied: %+v", ev)
+	}
+	if ev.DistanceM == nil || *ev.DistanceM != 1234.5 {
+		t.Errorf("DistanceM = %v, want 1234.5", ev.DistanceM)
 	}
 	if ev.SpeedKmh != 90 {
 		t.Errorf("SpeedKmh = %v, want 90", ev.SpeedKmh)

@@ -281,6 +281,30 @@ type TelemetryPoint struct {
 	Ts    time.Time `json:"ts"`
 }
 
+// TrackPoint defines model for TrackPoint.
+type TrackPoint struct {
+	// Battery 0..1, EVs only
+	Battery *float64 `json:"battery,omitempty"`
+
+	// Degree Compass heading, 0 = north, clockwise
+	Degree float64 `json:"degree"`
+
+	// Distance Meters traveled along the route. lng/lat can be off the route (a detour); not set on points archived before it was recorded.
+	Distance *float64 `json:"distance,omitempty"`
+
+	// EngineTemp °C, diesels only
+	EngineTemp *float64 `json:"engineTemp,omitempty"`
+
+	// Fuel 0..1, diesels only
+	Fuel *float64 `json:"fuel,omitempty"`
+	Lat  float64  `json:"lat"`
+	Lng  float64  `json:"lng"`
+
+	// Speed Meters per second
+	Speed float64   `json:"speed"`
+	Ts    time.Time `json:"ts"`
+}
+
 // Trip defines model for Trip.
 type Trip struct {
 	CompletedAt    *time.Time `json:"completedAt,omitempty"`
@@ -310,6 +334,13 @@ type TripSource string
 
 // TripStatus defines model for TripStatus.
 type TripStatus string
+
+// TripTrack defines model for TripTrack.
+type TripTrack struct {
+	Events []Event      `json:"events"`
+	Points []TrackPoint `json:"points"`
+	Trip   Trip         `json:"trip"`
+}
 
 // Vehicle defines model for Vehicle.
 type Vehicle struct {
@@ -393,6 +424,9 @@ type ServerInterface interface {
 	// (GET /trips/{id}/telemetry)
 	ListTripTelemetry(w http.ResponseWriter, r *http.Request, id int64, params ListTripTelemetryParams)
 
+	// (GET /trips/{id}/track)
+	GetTripTrack(w http.ResponseWriter, r *http.Request, id int64)
+
 	// (GET /vehicles)
 	ListVehicles(w http.ResponseWriter, r *http.Request)
 
@@ -441,6 +475,11 @@ func (_ Unimplemented) UpdateTrip(w http.ResponseWriter, r *http.Request, id int
 
 // (GET /trips/{id}/telemetry)
 func (_ Unimplemented) ListTripTelemetry(w http.ResponseWriter, r *http.Request, id int64, params ListTripTelemetryParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// (GET /trips/{id}/track)
+func (_ Unimplemented) GetTripTrack(w http.ResponseWriter, r *http.Request, id int64) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -679,6 +718,32 @@ func (siw *ServerInterfaceWrapper) ListTripTelemetry(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// GetTripTrack operation middleware
+func (siw *ServerInterfaceWrapper) GetTripTrack(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id int64
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", chi.URLParam(r, "id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTripTrack(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListVehicles operation middleware
 func (siw *ServerInterfaceWrapper) ListVehicles(w http.ResponseWriter, r *http.Request) {
 
@@ -846,6 +911,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/trips/{id}/telemetry", wrapper.ListTripTelemetry)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/trips/{id}/track", wrapper.GetTripTrack)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/events", wrapper.ListEvents)
@@ -1183,6 +1251,42 @@ func (response ListTripTelemetry404JSONResponse) VisitListTripTelemetryResponse(
 	return err
 }
 
+type GetTripTrackRequestObject struct {
+	Id int64 `json:"id"`
+}
+
+type GetTripTrackResponseObject interface {
+	VisitGetTripTrackResponse(w http.ResponseWriter) error
+}
+
+type GetTripTrack200JSONResponse TripTrack
+
+func (response GetTripTrack200JSONResponse) VisitGetTripTrackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTripTrack404JSONResponse Error
+
+func (response GetTripTrack404JSONResponse) VisitGetTripTrackResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListVehiclesRequestObject struct {
 }
 
@@ -1251,6 +1355,9 @@ type StrictServerInterface interface {
 
 	// (GET /trips/{id}/telemetry)
 	ListTripTelemetry(ctx context.Context, request ListTripTelemetryRequestObject) (ListTripTelemetryResponseObject, error)
+
+	// (GET /trips/{id}/track)
+	GetTripTrack(ctx context.Context, request GetTripTrackRequestObject) (GetTripTrackResponseObject, error)
 
 	// (GET /vehicles)
 	ListVehicles(ctx context.Context, request ListVehiclesRequestObject) (ListVehiclesResponseObject, error)
@@ -1506,6 +1613,32 @@ func (sh *strictHandler) ListTripTelemetry(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListTripTelemetryResponseObject); ok {
 		if err := validResponse.VisitListTripTelemetryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTripTrack operation middleware
+func (sh *strictHandler) GetTripTrack(w http.ResponseWriter, r *http.Request, id int64) {
+	var request GetTripTrackRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetTripTrack(ctx, request.(GetTripTrackRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTripTrack")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTripTrackResponseObject); ok {
+		if err := validResponse.VisitGetTripTrackResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

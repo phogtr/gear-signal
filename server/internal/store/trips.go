@@ -81,6 +81,19 @@ func (s *Store) ListTrips(ctx context.Context, f TripFilter) ([]Trip, error) {
 	return pgx.CollectRows(rows, pgx.RowToStructByName[Trip])
 }
 
+func (s *Store) GetTrip(ctx context.Context, tripID int64) (Trip, error) {
+	rows, _ := s.pool.Query(ctx, `SELECT `+tripColumns+` FROM trips WHERE id = $1`, tripID)
+	trip, err := pgx.CollectExactlyOneRow(rows, pgx.RowToStructByName[Trip])
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return trip, &NotFoundError{What: "trip", ID: tripID}
+	}
+	if err != nil {
+		return trip, fmt.Errorf("load trip %d: %w", tripID, err)
+	}
+	return trip, nil
+}
+
 // mark an active trip completed & park vehicle, idle/charging, at route's
 // destination depot. One statement, both rows change together or not
 func (s *Store) CompleteTrip(ctx context.Context, tripID int64, completedAt time.Time, res float64, isCharge bool) error {

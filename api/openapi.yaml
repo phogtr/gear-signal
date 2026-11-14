@@ -214,6 +214,31 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
 
+  /trips/{id}/track:
+    get:
+      operationId: getTripTrack
+      description: >
+        Everything needed to replay a trip: the trip, all of its archived telemetry (oldest first, at most
+        one point per second) and its alert events (oldest first). Points are empty for a trip that hasn't
+        started or was archived too long ago (14 days). The archive has holes where the server wasn't
+        running, and a trip can have only its final point.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          description: The trip with its telemetry and events
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TripTrack" }
+        "404":
+          description: Trip not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
   /events:
     get:
       operationId: listEvents
@@ -449,6 +474,44 @@ components:
           { type: number, format: double, description: "0..1, diesels only" }
         engineTemp:
           { type: number, format: double, description: "°C, diesels only" }
+
+    TrackPoint:
+      type: object
+      required: [ts, lng, lat, degree, speed]
+      properties:
+        ts: { type: string, format: date-time }
+        lng: { type: number, format: double }
+        lat: { type: number, format: double }
+        degree:
+          {
+            type: number,
+            format: double,
+            description: "Compass heading, 0 = north, clockwise",
+          }
+        distance:
+          description: >
+            Meters traveled along the route. lng/lat can be off the route (a detour); not set on
+            points archived before it was recorded.
+          type: number
+          format: double
+        speed: { type: number, format: double, description: Meters per second }
+        battery: { type: number, format: double, description: "0..1, EVs only" }
+        fuel:
+          { type: number, format: double, description: "0..1, diesels only" }
+        engineTemp:
+          { type: number, format: double, description: "°C, diesels only" }
+
+    TripTrack:
+      type: object
+      required: [trip, points, events]
+      properties:
+        trip: { $ref: "#/components/schemas/Trip" }
+        points:
+          type: array
+          items: { $ref: "#/components/schemas/TrackPoint" }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/Event" }
 
     Error:
       type: object

@@ -136,6 +136,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/trips/{id}/track": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Everything needed to replay a trip: the trip, all of its archived telemetry (oldest first, at most one point per second) and its alert events (oldest first). Points are empty for a trip that hasn't started or was archived too long ago (14 days). The archive has holes where the server wasn't running, and a trip can have only its final point. */
+        get: operations["getTripTrack"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events": {
         parameters: {
             query?: never;
@@ -350,6 +367,49 @@ export interface components {
              * @description °C, diesels only
              */
             engineTemp?: number;
+        };
+        TrackPoint: {
+            /** Format: date-time */
+            ts: string;
+            /** Format: double */
+            lng: number;
+            /** Format: double */
+            lat: number;
+            /**
+             * Format: double
+             * @description Compass heading, 0 = north, clockwise
+             */
+            degree: number;
+            /**
+             * Format: double
+             * @description Meters traveled along the route. lng/lat can be off the route (a detour); not set on points archived before it was recorded.
+             */
+            distance?: number;
+            /**
+             * Format: double
+             * @description Meters per second
+             */
+            speed: number;
+            /**
+             * Format: double
+             * @description 0..1, EVs only
+             */
+            battery?: number;
+            /**
+             * Format: double
+             * @description 0..1, diesels only
+             */
+            fuel?: number;
+            /**
+             * Format: double
+             * @description °C, diesels only
+             */
+            engineTemp?: number;
+        };
+        TripTrack: {
+            trip: components["schemas"]["Trip"];
+            points: components["schemas"]["TrackPoint"][];
+            events: components["schemas"]["Event"][];
         };
         Error: {
             message: string;
@@ -641,6 +701,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Trip not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getTripTrack: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The trip with its telemetry and events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TripTrack"];
                 };
             };
             /** @description Trip not found */

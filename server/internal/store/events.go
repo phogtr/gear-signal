@@ -50,3 +50,17 @@ func (s *Store) ListEvents(ctx context.Context, limit int) ([]Event, error) {
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByName[Event])
 }
+
+// oldest first
+func (s *Store) ListTripEvents(ctx context.Context, tripID int64) ([]Event, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, trip_id, vehicle_id, severity, code, message, ts
+		FROM events
+		WHERE trip_id = $1
+		ORDER BY ts, id`, tripID)
+
+	if err != nil {
+		return nil, fmt.Errorf("query trip events: %w", err)
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByName[Event])
+}

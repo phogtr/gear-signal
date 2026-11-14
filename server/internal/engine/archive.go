@@ -19,6 +19,7 @@ func telemetryRow(now time.Time, st sim.State) store.Telemetry {
 		Lat:         st.Lat,
 		Lon:         st.Lng,
 		HeadingDeg:  st.Degree,
+		DistanceM:   &st.Distance,
 		SpeedKmh:    st.Speed * 3.6,
 		BatterySOC:  percent(st.Battery),
 		FuelPct:     percent(st.Fuel),
