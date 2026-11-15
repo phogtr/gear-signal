@@ -7,7 +7,7 @@ import {
   gaugeFraction,
   gaugeText,
   metrics,
-  parseVehicleId,
+  parseId,
   resAt,
   resMetric,
 } from "../../lib/console";
@@ -42,11 +42,11 @@ const state = (extra: Partial<VehicleState>): VehicleState => ({
 const table = (s: VehicleState) =>
   metrics(s, 30_000).map((r) => `${r.label} ${r.value} ${r.unit}`);
 
-describe("parseVehicleId", () => {
+describe("parseId", () => {
   it("accepts positive whole numbers only", () => {
-    expect(parseVehicleId("12")).toBe(12);
+    expect(parseId("12")).toBe(12);
     for (const bad of [null, "", "0", "-3", "1.5", "abc"]) {
-      expect(parseVehicleId(bad)).toBeNull();
+      expect(parseId(bad)).toBeNull();
     }
   });
 });

@@ -4,6 +4,7 @@ import type { Depot, Route } from "../../lib/api/client";
 import {
   formatClock,
   formatCountdown,
+  formatDuration,
   formatTime,
   formatWhen,
   routeLabel,
@@ -29,7 +30,7 @@ describe("routeLabel", () => {
   });
 
   it("shows a dash for an unknown depot", () => {
-    expect(routeLabel(route(1, 9), depots)).toBe("DTLA Warehouse → —");
+    expect(routeLabel(route(1, 9), depots)).toBe("DTLA Warehouse → -");
   });
 });
 
@@ -91,5 +92,21 @@ describe("formatTime", () => {
         second: "2-digit",
       }).format(t),
     );
+  });
+});
+
+describe("formatDuration", () => {
+  it("shows seconds, then minutes and seconds, then hours and minutes", () => {
+    expect(formatDuration(0)).toBe("0 s");
+    expect(formatDuration(45_600)).toBe("46 s");
+    expect(formatDuration(60_000)).toBe("1 min");
+    expect(formatDuration(106_000)).toBe("1 min 46 s");
+    expect(formatDuration(403_000)).toBe("6 min 43 s");
+    expect(formatDuration(3_600_000)).toBe("1 h");
+    expect(formatDuration(4_830_000)).toBe("1 h 20 min");
+  });
+
+  it("never goes negative", () => {
+    expect(formatDuration(-500)).toBe("0 s");
   });
 });

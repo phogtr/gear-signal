@@ -14,11 +14,11 @@ import {
 } from "../../../lib/api/queries";
 import { useSocket } from "../../../lib/ws/useSocket";
 import { useAlerts } from "../../../lib/useAlerts";
-import { parseVehicleId } from "../../../lib/console";
+import { parseId } from "../../../lib/console";
 
 export const ConsolePage = () => {
   const [params] = useSearchParams();
-  const selectedId = parseVehicleId(params.get("vehicle"));
+  const selectedId = parseId(params.get("vehicle"));
 
   useSocket();
 

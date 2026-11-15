@@ -3,7 +3,9 @@ import { formatCountdown, routeLabel } from "./format";
 import type { Depot, Route, Trip, Vehicle } from "./api/client";
 
 export interface TripLabels {
+  /** "Vehicle 'name'"" */
   vehicle: (id: number) => string;
+  /** "origin → destination"  */
   route: (id: number) => string;
 }
 

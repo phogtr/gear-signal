@@ -5,9 +5,14 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 
+import { isJustFinished } from "../replay";
+
+import { BACKFILL_RETRY_MS } from "../backfill";
+
 import { api, type NewTrip, type Route, type TripSource } from "./client";
 
 export const RECENT_TRIPS_LIMIT = 20;
+export const REPLAY_TRIPS_LIMIT = 50;
 export const EVENT_HISTORY_LIMIT = 50;
 
 // depots & routes only change when database re-seeded, so they never go stale
@@ -86,6 +91,36 @@ export const useRecentTrips = (source?: TripSource) => {
     },
     // keep old rows while switching filters instead of flashing empty table
     placeholderData: keepPreviousData,
+  });
+};
+
+export const useCompletedTrips = () => {
+  return useQuery({
+    queryKey: ["trips", "completed"],
+    queryFn: async () => {
+      const { data, response } = await api.GET("/trips", {
+        params: { query: { status: ["completed"], limit: REPLAY_TRIPS_LIMIT } },
+      });
+      return isOk(data, response, "GET /trips?status=completed");
+    },
+  });
+};
+
+export const useTripTrack = (id: number | null) => {
+  return useQuery({
+    queryKey: ["track", id],
+    queryFn: async () => {
+      const { data, response } = await api.GET("/trips/{id}/track", {
+        params: { path: { id: id! } },
+      });
+      if (response.status === 404) return null;
+      return isOk(data, response, "GET /trips/{id}/track");
+    },
+    enabled: id !== null,
+    staleTime: Infinity,
+    // refetch since archive 5s later
+    refetchInterval: (query) =>
+      isJustFinished(query.state.data, Date.now()) ? BACKFILL_RETRY_MS : false,
   });
 };
 

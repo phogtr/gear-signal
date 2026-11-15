@@ -31,8 +31,8 @@ export interface Metric {
   gauge?: Gauge;
 }
 
-// "?vehicle=12" -> 12; anything else means nothing is selected
-export const parseVehicleId = (param: string | null): number | null => {
+// "?vehicle=12" -> id; anything else means nothing is selected
+export const parseId = (param: string | null): number | null => {
   const id = Number(param);
   return param && Number.isInteger(id) && id > 0 ? id : null;
 };

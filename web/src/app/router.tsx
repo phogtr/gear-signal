@@ -1,10 +1,7 @@
 import { createBrowserRouter, Navigate } from "react-router";
 
 import { App } from "./App";
-
 import { SchedulePage } from "./pages/schedule/SchedulePage";
-import { ReplayPage } from "./pages/replay/ReplayPage";
-
 import { Placeholder } from "../components/Placeholder";
 
 import {
@@ -33,7 +30,12 @@ export const router = createBrowserRouter([
           Component: (await import("./pages/console/ConsolePage")).ConsolePage,
         }),
       },
-      { path: REPLAY_ROUTE, element: <ReplayPage /> },
+      {
+        path: REPLAY_ROUTE,
+        lazy: async () => ({
+          Component: (await import("./pages/replay/ReplayPage")).ReplayPage,
+        }),
+      },
       {
         path: "*",
         element: (

@@ -1,11 +1,14 @@
+import { Link } from "react-router";
+
 import { TripSection } from "./TripSection";
 import { TripTable, type Column } from "./TripTable";
 import { RouteCell, VehicleCell } from "./TripCells";
 
-import { useNow } from "../../lib/useNow";
 import { formatWhen } from "../../lib/format";
+import { useNow } from "../../lib/useNow";
 import type { TripLabels } from "../../lib/schedule";
 
+import { REPLAY_ROUTE } from "../../constants/routes";
 import type { Trip, TripSource } from "../../lib/api/client";
 
 interface Props {
@@ -30,6 +33,7 @@ export const RecentTrips = ({ trips, source, labels }: Props) => {
     },
     {
       header: "Status",
+      isHiddenOnPhone: true,
       className: "w-20 sm:w-24",
       cell: (t) =>
         t.status === "cancelled" ? (
@@ -47,12 +51,30 @@ export const RecentTrips = ({ trips, source, labels }: Props) => {
             ? ["arrived", t.completedAt]
             : ["planned", t.scheduledStart];
         return (
-          <span className="tabular-nums">
+          <div className="tabular-nums">
             <span className="text-muted-foreground">{label}</span>{" "}
             <time dateTime={time}>{formatWhen(time, now)}</time>
-          </span>
+            {t.status === "cancelled" && (
+              <div className="text-muted-foreground sm:hidden">Cancelled</div>
+            )}
+          </div>
         );
       },
+    },
+    {
+      header: "Action",
+      isHeaderHidden: true,
+      className: "w-18 sm:w-20 text-right",
+      cell: (t) =>
+        t.status === "completed" && (
+          <Link
+            to={`/${REPLAY_ROUTE}?trip=${t.id}`}
+            aria-label={`Replay ${labels.vehicle(t.vehicleId)} trip arrived ${formatWhen(t.completedAt ?? t.scheduledStart, now)}`}
+            className="px-2 py-1 rounded-md border border-border text-xs secondary-btn hover:border-primary hover:text-primary"
+          >
+            Replay
+          </Link>
+        ),
     },
   ];
 

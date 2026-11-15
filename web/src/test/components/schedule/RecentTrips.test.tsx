@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { RecentTrips } from "../../../components/schedule/RecentTrips";
@@ -19,7 +20,9 @@ describe("RecentTrips", () => {
         completedAt: "2026-10-21T16:30:00Z",
       }),
     ];
-    render(<RecentTrips trips={trips} labels={labels} />);
+    render(<RecentTrips trips={trips} labels={labels} />, {
+      wrapper: MemoryRouter,
+    });
 
     const [cancelled, completed] = rowTexts(
       screen.getByRole("table", { name: "Recent" }),
@@ -44,6 +47,7 @@ describe("RecentTrips", () => {
         ]}
         labels={labels}
       />,
+      { wrapper: MemoryRouter },
     );
     const row = rowTexts(screen.getByRole("table", { name: "Recent" }))[0];
     expect(row).toMatch(
@@ -52,11 +56,31 @@ describe("RecentTrips", () => {
   });
 
   it("has an empty state per filter", () => {
-    const { rerender } = render(<RecentTrips trips={[]} labels={labels} />);
+    const { rerender } = render(<RecentTrips trips={[]} labels={labels} />, {
+      wrapper: MemoryRouter,
+    });
     expect(screen.getByText("No finished trips yet")).toBeInTheDocument();
     rerender(<RecentTrips trips={[]} source="planned" labels={labels} />);
     expect(
       screen.getByText(/No planned trips have finished/),
     ).toBeInTheDocument();
+  });
+
+  it("links only completed trips to their replay", () => {
+    vi.useFakeTimers({ now: new Date("2026-10-21T17:00:00Z") });
+    const trips = [
+      trip(1, { status: "cancelled" }),
+      trip(2, { status: "completed", completedAt: "2026-10-21T16:30:00Z" }),
+    ];
+    render(<RecentTrips trips={trips} labels={labels} />, {
+      wrapper: MemoryRouter,
+    });
+
+    const links = screen.getAllByRole("link");
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAccessibleName(
+      `Replay VAN-02 trip arrived ${formatClock("2026-10-21T16:30:00Z")}`,
+    );
+    expect(links[0]).toHaveAttribute("href", "/replay?trip=2");
   });
 });

@@ -1,7 +1,8 @@
 import type { Depot, Route } from "./api/client";
 
+/** origin → destination  */
 export const routeLabel = (route: Route, depots: Depot[]): string => {
-  const name = (id: number) => depots.find((d) => d.id === id)?.name ?? "—";
+  const name = (id: number) => depots.find((d) => d.id === id)?.name ?? "-";
   return `${name(route.originDepotId)} → ${name(route.destinationDepotId)}`;
 };
 
@@ -21,15 +22,15 @@ const dayFormat = new Intl.DateTimeFormat([], {
   day: "numeric",
 });
 
-// "16:52" in browser's time zone
+/** "16:52" in browser's time zone */
 export const formatClock = (time: string | number | Date): string =>
   clockFormat.format(new Date(time));
 
-// "16:52:07", for event log timestamps
+/** "16:52:07", for event log timestamps */
 export const formatTime = (time: string | number | Date): string =>
   timeFormat.format(new Date(time));
 
-// clock alone for today, "Oct 17, 16:52" for any other day
+/** clock alone for today, "Oct 17, 16:52" for other day */
 export const formatWhen = (
   time: string | number | Date,
   now: number,
@@ -40,13 +41,29 @@ export const formatWhen = (
     : `${dayFormat.format(d)}, ${clockFormat.format(d)}`;
 };
 
-// seconds in last minute, whole minutes under an hour, then "1 h 20 min"
+/**
+ * seconds in last minute, whole minutes under an hour, then "1 h 20 min".
+ * "1 min 46s" -> rounded to "2 min"
+ * */
 export const formatCountdown = (ms: number): string => {
   const seconds = Math.max(Math.ceil(ms / 1000), 0);
   if (seconds < 60) return `${seconds} s`;
 
   const minutes = Math.ceil(seconds / 60);
   if (minutes < 60) return `${minutes} min`;
+
+  const rest = minutes % 60;
+  return `${Math.floor(minutes / 60)} h${rest ? ` ${rest} min` : ""}`;
+};
+
+/** "46 s", "1 min 46 s", "1 h 20 min" */
+export const formatDuration = (ms: number): string => {
+  const seconds = Math.max(Math.round(ms / 1000), 0);
+  if (seconds < 60) return `${seconds} s`;
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60)
+    return `${minutes} min${seconds % 60 ? ` ${seconds % 60} s` : ""}`;
 
   const rest = minutes % 60;
   return `${Math.floor(minutes / 60)} h${rest ? ` ${rest} min` : ""}`;
