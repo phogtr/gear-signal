@@ -1,19 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  AttributionControl,
-  Map as MapLibreMap,
-  NavigationControl,
-  setWorkerUrl,
-  type GeoJSONSource,
-} from "maplibre-gl";
-import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?url";
-import "maplibre-gl/dist/maplibre-gl.css";
+import type { Map as MapLibreMap, GeoJSONSource } from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
+
+import { createMap, LA } from "./baseMap";
 
 import { useSocketStore } from "../../lib/ws/socket";
 
 import {
-  boundsOf,
+  boundsOfPoints,
   depotsToGeoJSON,
   liveVehiclesToGeoJSON,
   metersPerPixel,
@@ -35,18 +29,8 @@ import {
   WARNING_COLOR,
 } from "../../constants/map";
 
-import "./map-controls.css";
-
-// MapLibre locates its worker relative to its own file, which breaks once Vite
-// bundles it. Importing the worker with ?url makes Vite serve/emit it explicitly.
-setWorkerUrl(workerUrl);
-
-const STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
-
-const LA: [number, number] = [-118.33, 33.97];
-
 // parked vehicles sit on a ring around their depot. Its radius is fixed in screen
-// pixels (recomputed on zoom) so it never smears at city scale or sprawls up close.
+// pixels (recomputed on zoom) so it never smears at city scale or sprawls up close
 const RING_RADIUS_PX = 24;
 
 interface Props {
@@ -59,7 +43,7 @@ interface Props {
   onSelect: (id: number | null) => void;
 }
 
-// click within this pixels of a vehicle selects it (dots are 7 px)
+// click within this pixel of vehicle select it (dots are 7 px)
 const HIT_PX = 6;
 const NONE = -1;
 
@@ -88,20 +72,9 @@ export const CoreMap = ({
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const map = new MapLibreMap({
-      container: containerRef.current,
-      style: STYLE_URL,
-      center: LA,
-      zoom: 9.5,
-      attributionControl: false,
-      fadeDuration: 0, // default 300ms
-    });
-    // credits (OpenFreeMap, OpenMapTiles, OpenStreetMap)
-    map.addControl(new AttributionControl({ compact: true }));
-    map.addControl(new NavigationControl({ showCompass: false }), "top-right");
+    const map = createMap(containerRef.current);
 
     map.on("load", () => {
-      applyTheme(map);
       addTriangleIcon(map);
       addCoreLayers(map);
       setReady(true);
@@ -245,7 +218,7 @@ export const CoreMap = ({
     map.easeTo({ center: target, padding, duration: reduce ? 0 : 600 });
   }, [ready, selectedId]);
 
-  // push data into the map sources whenever it changes
+  // push data into the map sources
   useEffect(() => {
     dataRef.current = { depots, vehicles };
 
@@ -258,7 +231,7 @@ export const CoreMap = ({
       ?.setData(depotsToGeoJSON(depots, vehicles));
     syncVehicles(map, vehicles, depots);
 
-    const bounds = boundsOf(routes);
+    const bounds = boundsOfPoints(routes.flatMap((r) => r.coordinates));
     if (bounds && !fittedRef.current) {
       map.fitBounds(bounds, {
         padding: { top: 48, right: 64, bottom: 72, left: 48 },
@@ -283,19 +256,6 @@ export const CoreMap = ({
 };
 
 /////////////////////////////////////////////////////////////////////////////////
-const applyTheme = (map: MapLibreMap) => {
-  if (map.getLayer("background")) {
-    map.setPaintProperty(
-      "background",
-      "background-color",
-      themeColor("background"),
-    );
-  }
-  if (map.getLayer("water")) {
-    map.setPaintProperty("water", "fill-color", themeColor("muted"));
-  }
-};
-
 const TRIANGLE_PX = 18;
 
 const addTriangleIcon = (map: MapLibreMap) => {

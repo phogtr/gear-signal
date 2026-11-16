@@ -1,6 +1,8 @@
 import { useMemo, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 
+import { ReplayLegend } from "../../../components/replay/ReplayLegend";
+import { ReplayMap } from "../../../components/replay/ReplayMap";
 import { TripPicker } from "../../../components/replay/TripPicker";
 import { TripSummary } from "../../../components/replay/TripSummary";
 
@@ -82,14 +84,36 @@ export const ReplayPage = () => {
         );
     }
 
+    const route = routes.data?.find((r) => r.id === trip.routeId);
+    const ends = (depots.data ?? []).filter(
+      (d) =>
+        d.id === route?.originDepotId || d.id === route?.destinationDepotId,
+    );
+
     return (
-      <TripSummary
-        track={track.data}
-        vehicle={vehicles.data?.find((v) => v.id === trip.vehicleId)}
-        route={routes.data?.find((r) => r.id === trip.routeId)}
-        routeText={labels.route(trip.routeId)}
-        now={now}
-      />
+      <div className="flex min-w-0 flex-col gap-4">
+        <div className="relative flex flex-col gap-2">
+          <div className="relative h-64 overflow-hidden rounded-lg border border-border sm:h-96">
+            <ReplayMap
+              tripId={trip.id}
+              route={route}
+              depots={ends}
+              points={track.data.points}
+            />
+          </div>
+          <div className="sm:absolute sm:bottom-3 sm:left-3">
+            <ReplayLegend />
+          </div>
+        </div>
+
+        <TripSummary
+          track={track.data}
+          vehicle={vehicles.data?.find((v) => v.id === trip.vehicleId)}
+          route={route}
+          routeText={labels.route(trip.routeId)}
+          now={now}
+        />
+      </div>
     );
   };
 

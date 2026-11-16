@@ -2,12 +2,14 @@ import type {
   Feature,
   FeatureCollection,
   LineString,
+  MultiLineString,
   Point as GeoPoint,
 } from "geojson";
 
 import { getSeverity, type ActiveAlert } from "../events";
+import { GAP_MS } from "../replay";
 
-import type { Depot, Route, Vehicle } from "../api/client";
+import type { Depot, Route, TrackPoint, Vehicle } from "../api/client";
 import type { MovingVehicle } from "./motion";
 
 type Point = [lng: number, lat: number];
@@ -106,6 +108,30 @@ export const liveVehiclesToGeoJSON = (
   }),
 });
 
+export const trackToGeoJSON = (
+  points: TrackPoint[],
+): Feature<MultiLineString> => {
+  const pieces: Point[][] = [];
+  let piece: Point[] = [];
+  let prev = -Infinity;
+  for (const p of points) {
+    const t = Date.parse(p.ts);
+    if (t - prev > GAP_MS) {
+      if (piece.length > 1) pieces.push(piece);
+      piece = [];
+    }
+    piece.push([p.lng, p.lat]);
+    prev = t;
+  }
+  if (piece.length > 1) pieces.push(piece);
+
+  return {
+    type: "Feature",
+    properties: {},
+    geometry: { type: "MultiLineString", coordinates: pieces },
+  };
+};
+
 // moves a point `meters` in direction `angle` (radians, 0 = east). Accurate enough
 // for a few hundred meters, which is all a ring around a depot needs.
 //                north
@@ -130,10 +156,9 @@ const offset = ([lng, lat]: Point, meters: number, angle: number): Point => {
   return [lng + dLng, lat + dLat];
 };
 
-export const boundsOf = (
-  routes: Route[],
+export const boundsOfPoints = (
+  points: Point[],
 ): [southWest: Point, northEast: Point] | null => {
-  const points = routes.flatMap((r) => r.coordinates);
   if (points.length === 0) return null;
 
   const lngs = points.map((p) => p[0]);

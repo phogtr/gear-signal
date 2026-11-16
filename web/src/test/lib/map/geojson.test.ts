@@ -1,14 +1,20 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  boundsOf,
+  boundsOfPoints,
   depotsToGeoJSON,
   liveVehiclesToGeoJSON,
   metersPerPixel,
   parkedVehiclesToGeoJSON,
   routesToGeoJSON,
+  trackToGeoJSON,
 } from "../../../lib/map/geojson";
-import type { Depot, Route, Vehicle } from "../../../lib/api/client";
+import type {
+  Depot,
+  Route,
+  TrackPoint,
+  Vehicle,
+} from "../../../lib/api/client";
 import type { ActiveAlert } from "../../../lib/events";
 
 const depot = (id: number, lon: number, lat: number): Depot => ({
@@ -236,15 +242,13 @@ describe("liveVehiclesToGeoJSON", () => {
   });
 });
 
-describe("boundsOf", () => {
-  it("returns the southwest and northeast corners of all route points", () => {
+describe("boundsOfPoints", () => {
+  it("returns the southwest and northeast corners of all points", () => {
     expect(
-      boundsOf([
-        route(1, [
-          [-118.24, 34.05],
-          [-118.4, 33.94],
-        ]),
-        route(2, [[-118.15, 34.18]]),
+      boundsOfPoints([
+        [-118.24, 34.05],
+        [-118.4, 33.94],
+        [-118.15, 34.18],
       ]),
     ).toEqual([
       [-118.4, 33.94],
@@ -253,7 +257,45 @@ describe("boundsOf", () => {
   });
 
   it("returns null without points", () => {
-    expect(boundsOf([])).toBeNull();
-    expect(boundsOf([route(1, [])])).toBeNull();
+    expect(boundsOfPoints([])).toBeNull();
+  });
+});
+
+describe("trackToGeoJSON", () => {
+  const T0 = Date.parse("2026-11-14T17:00:00Z");
+  const point = (s: number): TrackPoint => ({
+    ts: new Date(T0 + s * 1000).toISOString(),
+    lng: -118.25 + s / 1000,
+    lat: 34.05,
+    degree: 90,
+    speed: 15,
+  });
+  const pieces = (seconds: number[]) =>
+    trackToGeoJSON(seconds.map(point)).geometry.coordinates;
+
+  it("draws one line at a point a second", () => {
+    expect(pieces([0, 1, 2])).toEqual([
+      [
+        [-118.25, 34.05],
+        [-118.249, 34.05],
+        [-118.248, 34.05],
+      ],
+    ]);
+  });
+
+  it("breaks the line at a gap instead of bridging it", () => {
+    const lines = pieces([0, 1, 2, 30, 31]);
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toHaveLength(3);
+    expect(lines[1]).toEqual([
+      [-118.22, 34.05],
+      [-118.219, 34.05],
+    ]);
+  });
+
+  it("drops a lone point between gaps, it has no line", () => {
+    expect(pieces([0, 1, 10, 20, 21]).map((l) => l.length)).toEqual([2, 2]);
+    expect(pieces([40])).toEqual([]);
+    expect(pieces([])).toEqual([]);
   });
 });
