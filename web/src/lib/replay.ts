@@ -1,6 +1,7 @@
 import { BACKFILL_RETRY_MS } from "./backfill";
 
-import type { TripTrack } from "./api/client";
+import type { TrackPoint, TripTrack } from "./api/client";
+import type { Polyline } from "./map/polyline";
 
 export const GAP_MS = 1500;
 
@@ -22,6 +23,9 @@ export const findGaps = (
   }
   return gaps;
 };
+
+export const gapAt = (gaps: Gap[], t: number): Gap | undefined =>
+  gaps.find((g) => t > g.from && t < g.to);
 
 export type TrackState = "empty" | "arrival-only" | "ready";
 
@@ -74,3 +78,82 @@ export const isJustFinished = (
     now - Date.parse(completedAt) < BACKFILL_RETRY_MS
   );
 };
+
+export interface TrackPosition {
+  lng: number;
+  lat: number;
+  degree: number;
+  index: number;
+}
+
+export const makeTrack = (points: TrackPoint[], route?: Polyline) => {
+  const times = points.map((p) => Date.parse(p.ts));
+
+  const offsets = points.map((p): [number, number] | undefined => {
+    if (!route || p.distance === undefined) return undefined;
+    const on = route.pointAt(p.distance);
+    return [p.lng - on.lng, p.lat - on.lat];
+  });
+
+  const pointPosition = (i: number): TrackPosition => ({
+    lng: points[i].lng,
+    lat: points[i].lat,
+    degree: points[i].degree,
+    index: i,
+  });
+
+  const at = (t: number, isMotion = true): TrackPosition | null => {
+    if (points.length === 0) return null;
+    if (t < times[0]) return times[0] - t <= GAP_MS ? pointPosition(0) : null;
+
+    // upper-bound binary search
+    // last i where times[i] <= t
+    let lo = 0;
+    let hi = times.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (times[mid] <= t) lo = mid;
+      else hi = mid - 1;
+    }
+    const i = lo;
+    const j = i + 1;
+
+    if (t === times[i] || !isMotion) {
+      return j < times.length && times[j] - times[i] > GAP_MS && t > times[i]
+        ? null
+        : pointPosition(i);
+    }
+    if (j === times.length) {
+      return t - times[i] <= GAP_MS ? pointPosition(i) : null;
+    }
+    if (times[j] - times[i] > GAP_MS) return null;
+
+    const f = (t - times[i]) / (times[j] - times[i]);
+    const lerp = (a: number, b: number) => a + (b - a) * f;
+    const a = points[i];
+    const b = points[j];
+    const oa = offsets[i];
+    const ob = offsets[j];
+
+    if (route && oa && ob) {
+      // similarly in motion.ts
+      const on = route.pointAt(lerp(a.distance!, b.distance!));
+      return {
+        lng: on.lng + lerp(oa[0], ob[0]),
+        lat: on.lat + lerp(oa[1], ob[1]),
+        degree: on.degree,
+        index: i,
+      };
+    }
+    return {
+      lng: lerp(a.lng, b.lng),
+      lat: lerp(a.lat, b.lat),
+      degree: a.degree,
+      index: i,
+    };
+  };
+
+  return { times, at };
+};
+
+export type Track = ReturnType<typeof makeTrack>;

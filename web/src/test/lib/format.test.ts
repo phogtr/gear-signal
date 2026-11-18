@@ -5,6 +5,7 @@ import {
   formatClock,
   formatCountdown,
   formatDuration,
+  formatPlayTime,
   formatTime,
   formatWhen,
   routeLabel,
@@ -108,5 +109,16 @@ describe("formatDuration", () => {
 
   it("never goes negative", () => {
     expect(formatDuration(-500)).toBe("0 s");
+  });
+});
+
+describe("formatPlayTime", () => {
+  it("reads like a media player clock", () => {
+    expect(formatPlayTime(0)).toBe("0:00");
+    expect(formatPlayTime(42_400)).toBe("0:42");
+    expect(formatPlayTime(85_500)).toBe("1:26"); // same as formatDuration
+    expect(formatPlayTime(725_000)).toBe("12:05");
+    expect(formatPlayTime(3_723_000)).toBe("1:02:03");
+    expect(formatPlayTime(-1)).toBe("0:00");
   });
 });

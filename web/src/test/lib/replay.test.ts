@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { findGaps, isJustFinished, summarizeTrack } from "../../lib/replay";
+import {
+  findGaps,
+  gapAt,
+  isJustFinished,
+  makeTrack,
+  summarizeTrack,
+} from "../../lib/replay";
+import { makePolyline } from "../../lib/map/polyline";
 
 import type {
   EventRecord,
@@ -123,5 +130,97 @@ describe("isJustFinished", () => {
         T0,
       ),
     ).toBe(false);
+  });
+});
+
+describe("gapAt", () => {
+  const gaps = [{ from: 10_000, to: 30_000 }];
+  it("finds the gap a time falls in, not its edges", () => {
+    expect(gapAt(gaps, 20_000)).toBe(gaps[0]);
+    expect(gapAt(gaps, 10_000)).toBeUndefined();
+    expect(gapAt(gaps, 30_000)).toBeUndefined();
+    expect(gapAt(gaps, 5_000)).toBeUndefined();
+  });
+});
+
+describe("makeTrack", () => {
+  // 0.01° east along the equator ≈ 1,112 m; turns north at the end
+  const route = makePolyline([
+    [0, 0],
+    [0.01, 0],
+    [0.01, 0.01],
+  ]);
+  // on the route at `distance`, or `north` degrees off it (a detour)
+  const onRoute = (s: number, distance: number, north = 0): TrackPoint => {
+    const on = route.pointAt(distance);
+    return {
+      ts: at(s),
+      lng: on.lng,
+      lat: on.lat + north,
+      degree: on.degree,
+      speed: 15,
+      distance,
+    };
+  };
+  const ms = (s: number) => T0 + s * 1000;
+
+  it("is at a point exactly at its time", () => {
+    const t = makeTrack([onRoute(0, 0), onRoute(1, 500)], route);
+    expect(t.at(ms(1))).toMatchObject({
+      lng: route.pointAt(500).lng,
+      index: 1,
+    });
+  });
+
+  it("follows the route between points, around a corner", () => {
+    // 1,000 m -> 1,300 m: the corner is at ~1,112 m, so halfway (1,150 m) is past it, heading north
+    const t = makeTrack([onRoute(0, 1000), onRoute(1, 1300)], route);
+    const p = t.at(ms(0.5))!;
+    const want = route.pointAt(1150);
+    expect(p.lng).toBeCloseTo(want.lng, 9);
+    expect(p.lat).toBeCloseTo(want.lat, 9);
+    expect(p.degree).toBeCloseTo(0, 6);
+    expect(p.index).toBe(0);
+  });
+
+  it("carries a detour offset between points", () => {
+    const t = makeTrack([onRoute(0, 0, 0.001), onRoute(1, 500, 0.003)], route);
+    const p = t.at(ms(0.5))!;
+    expect(p.lat).toBeCloseTo(0.002, 9);
+    expect(p.lng).toBeCloseTo(route.pointAt(250).lng, 9);
+  });
+
+  it("draws a straight line for points without distance", () => {
+    const a = { ...point(0), lng: 0, lat: 0 };
+    const b = { ...point(1), lng: 0.01, lat: 0.01 };
+    const p = makeTrack([a, b], route).at(ms(0.5))!;
+    expect(p).toMatchObject({ lng: 0.005, lat: 0.005 });
+  });
+
+  it("shows nothing inside a gap, but the points around it", () => {
+    const t = makeTrack(
+      [onRoute(0, 0), onRoute(1, 50), onRoute(30, 900)],
+      route,
+    );
+    expect(t.at(ms(1))?.index).toBe(1);
+    expect(t.at(ms(15))).toBeNull();
+    expect(t.at(ms(30))?.index).toBe(2);
+  });
+
+  it("holds the first and last point for a moment, not across a gap", () => {
+    const t = makeTrack([onRoute(1, 0), onRoute(2, 50)], route);
+    expect(t.at(ms(0))?.index).toBe(0);
+    expect(t.at(ms(3))?.index).toBe(1);
+    expect(t.at(ms(-5))).toBeNull();
+    expect(t.at(ms(10))).toBeNull();
+  });
+
+  it("steps from point to point with reduced motion", () => {
+    const t = makeTrack([onRoute(0, 0), onRoute(1, 500)], route);
+    expect(t.at(ms(0.9), false)).toMatchObject({ lng: 0, index: 0 });
+  });
+
+  it("has nothing to show without points", () => {
+    expect(makeTrack([], route).at(T0)).toBeNull();
   });
 });

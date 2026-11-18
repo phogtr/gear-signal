@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Map as MapLibreMap, GeoJSONSource } from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
 
-import { createMap, LA } from "./baseMap";
+import { addTriangleIcon, createMap, LA } from "./baseMap";
 
 import { useSocketStore } from "../../lib/ws/socket";
 
@@ -256,35 +256,6 @@ export const CoreMap = ({
 };
 
 /////////////////////////////////////////////////////////////////////////////////
-const TRIANGLE_PX = 18;
-
-const addTriangleIcon = (map: MapLibreMap) => {
-  const ratio = 2;
-  const size = TRIANGLE_PX * ratio;
-  const ctx = document.createElement("canvas").getContext("2d");
-  if (!ctx) return;
-  ctx.canvas.width = ctx.canvas.height = size;
-
-  const inset = 3 * ratio;
-  ctx.beginPath();
-  ctx.moveTo(size / 2, inset); // (18, 6) top tip
-  ctx.lineTo(size - inset - 2 * ratio, size - inset); // (26, 30) bottom right
-  ctx.lineTo(inset + 2 * ratio, size - inset); // (10, 30) bottom left
-  ctx.closePath(); // back to (18, 6)
-  ctx.lineJoin = "round";
-
-  ctx.strokeStyle = themeColor("background");
-  ctx.lineWidth = 4.5 * ratio;
-  ctx.stroke();
-  ctx.strokeStyle = themeColor(INFO_COLOR);
-  ctx.lineWidth = 2 * ratio;
-  ctx.stroke();
-
-  map.addImage("vehicle-triangle", ctx.getImageData(0, 0, size, size), {
-    pixelRatio: ratio,
-  });
-};
-
 const empty: FeatureCollection = {
   type: "FeatureCollection",
   features: [],

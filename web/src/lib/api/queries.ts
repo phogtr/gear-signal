@@ -89,7 +89,6 @@ export const useRecentTrips = (source?: TripSource) => {
       });
       return isOk(data, response, "GET /trips (recent)");
     },
-    // keep old rows while switching filters instead of flashing empty table
     placeholderData: keepPreviousData,
   });
 };
@@ -118,6 +117,7 @@ export const useTripTrack = (id: number | null) => {
     },
     enabled: id !== null,
     staleTime: Infinity,
+    placeholderData: keepPreviousData,
     // refetch since archive 5s later
     refetchInterval: (query) =>
       isJustFinished(query.state.data, Date.now()) ? BACKFILL_RETRY_MS : false,

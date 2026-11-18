@@ -68,3 +68,12 @@ export const formatDuration = (ms: number): string => {
   const rest = minutes % 60;
   return `${Math.floor(minutes / 60)} h${rest ? ` ${rest} min` : ""}`;
 };
+
+/** "0:42", "12:05", "1:02:03" */
+export const formatPlayTime = (ms: number): string => {
+  const total = Math.max(Math.round(ms / 1000), 0);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = String(total % 60).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
+};

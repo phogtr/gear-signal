@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import type { FeatureCollection } from "geojson";
 
-import { createMap } from "../map/baseMap";
+import { addTriangleIcon, createMap } from "../map/baseMap";
 
 import {
   boundsOfPoints,
@@ -13,6 +13,8 @@ import {
 import { themeColor } from "../../lib/theme";
 
 import { INFO_COLOR, WARNING_COLOR } from "../../constants/map";
+import type { Playback } from "../../lib/playback";
+import type { Track, TrackPosition } from "../../lib/replay";
 import type { Depot, Route, TrackPoint } from "../../lib/api/client";
 
 interface Props {
@@ -20,6 +22,9 @@ interface Props {
   route: Route | undefined;
   depots: Depot[];
   points: TrackPoint[];
+  track: Track;
+  playback: Playback;
+  start: number;
 }
 
 const fitPadding = (width: number) => ({
@@ -29,7 +34,15 @@ const fitPadding = (width: number) => ({
   left: 40,
 });
 
-export const ReplayMap = ({ tripId, route, depots, points }: Props) => {
+export const ReplayMap = ({
+  tripId,
+  route,
+  depots,
+  points,
+  track,
+  playback,
+  start,
+}: Props) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const [ready, setReady] = useState(false);
@@ -40,6 +53,7 @@ export const ReplayMap = ({ tripId, route, depots, points }: Props) => {
 
     const map = createMap(containerRef.current);
     map.on("load", () => {
+      addTriangleIcon(map);
       addReplayLayers(map);
       setReady(true);
     });
@@ -75,6 +89,33 @@ export const ReplayMap = ({ tripId, route, depots, points }: Props) => {
     fittedRef.current = tripId;
   }, [ready, tripId, route, depots, points]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+
+    const source = map.getSource<GeoJSONSource>("vehicle");
+    const isMotion = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let drawn: TrackPosition | null | undefined;
+
+    const draw = (elapsed: number) => {
+      const p = track.at(start + elapsed, isMotion);
+      const isSame =
+        p === drawn ||
+        (p &&
+          drawn &&
+          p.lng === drawn.lng &&
+          p.lat === drawn.lat &&
+          p.degree === drawn.degree);
+      if (isSame) return;
+      drawn = p;
+      source?.setData(p ? vehicleFeature(p) : empty);
+    };
+
+    draw(playback.get().elapsed);
+
+    return playback.subscribe((s) => draw(s.elapsed));
+  }, [ready, track, playback, start]);
+
   return (
     <div className="absolute inset-0">
       <div
@@ -89,10 +130,22 @@ export const ReplayMap = ({ tripId, route, depots, points }: Props) => {
 
 const empty: FeatureCollection = { type: "FeatureCollection", features: [] };
 
+const vehicleFeature = (p: TrackPosition): FeatureCollection => ({
+  type: "FeatureCollection",
+  features: [
+    {
+      type: "Feature",
+      properties: { degree: p.degree },
+      geometry: { type: "Point", coordinates: [p.lng, p.lat] },
+    },
+  ],
+});
+
 const addReplayLayers = (map: MapLibreMap) => {
   map.addSource("route", { type: "geojson", data: empty });
   map.addSource("track", { type: "geojson", data: empty });
   map.addSource("ends", { type: "geojson", data: empty });
+  map.addSource("vehicle", { type: "geojson", data: empty });
 
   map.addLayer({
     id: "route",
@@ -144,6 +197,19 @@ const addReplayLayers = (map: MapLibreMap) => {
       "text-color": themeColor("foreground"),
       "text-halo-color": themeColor("background"),
       "text-halo-width": 1.5,
+    },
+  });
+
+  map.addLayer({
+    id: "vehicle",
+    type: "symbol",
+    source: "vehicle",
+    layout: {
+      "icon-image": "vehicle-triangle",
+      "icon-rotate": ["get", "degree"],
+      "icon-rotation-alignment": "map",
+      "icon-allow-overlap": true,
+      "icon-ignore-placement": true,
     },
   });
 };
