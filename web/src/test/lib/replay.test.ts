@@ -5,6 +5,7 @@ import {
   gapAt,
   isJustFinished,
   makeTrack,
+  pointMetrics,
   summarizeTrack,
 } from "../../lib/replay";
 import { makePolyline } from "../../lib/map/polyline";
@@ -222,5 +223,45 @@ describe("makeTrack", () => {
 
   it("has nothing to show without points", () => {
     expect(makeTrack([], route).at(T0)).toBeNull();
+  });
+});
+
+describe("makeTrack.indexAt", () => {
+  it("finds the point at or before a time, -1 before the first", () => {
+    const t = makeTrack([point(1), point(2), point(30)]);
+    const ms = (s: number) => T0 + s * 1000;
+    expect(t.indexAt(ms(0))).toBe(-1);
+    expect(t.indexAt(ms(1))).toBe(0);
+    expect(t.indexAt(ms(1.9))).toBe(0);
+    expect(t.indexAt(ms(15))).toBe(1);
+    expect(t.indexAt(ms(99))).toBe(2);
+    expect(makeTrack([]).indexAt(T0)).toBe(-1);
+  });
+});
+
+describe("pointMetrics", () => {
+  const values = (p: TrackPoint) =>
+    Object.fromEntries(pointMetrics(p, 20_000).map((m) => [m.label, m.value]));
+
+  it("gives a point the console's tiles", () => {
+    const ev = { ...point(1), speed: 20, battery: 0.634, distance: 5000 };
+    expect(values(ev)).toEqual({
+      Speed: "72",
+      Battery: "63.4",
+      Progress: "25",
+      Remaining: "15.0",
+    });
+    const truck = { ...point(1), fuel: 0.5, engineTemp: 91.26, distance: 0 };
+    expect(values(truck)).toMatchObject({
+      Fuel: "50.0",
+      "Engine temp": "91.3",
+    });
+  });
+
+  it("leaves out progress and remaining without a distance", () => {
+    expect(Object.keys(values({ ...point(1), battery: 0.5 }))).toEqual([
+      "Speed",
+      "Battery",
+    ]);
   });
 });

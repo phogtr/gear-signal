@@ -1,5 +1,7 @@
 import { BACKFILL_RETRY_MS } from "./backfill";
 
+import { metrics, type Metric } from "./console";
+
 import type { TrackPoint, TripTrack } from "./api/client";
 import type { Polyline } from "./map/polyline";
 
@@ -102,12 +104,12 @@ export const makeTrack = (points: TrackPoint[], route?: Polyline) => {
     index: i,
   });
 
-  const at = (t: number, isMotion = true): TrackPosition | null => {
-    if (points.length === 0) return null;
-    if (t < times[0]) return times[0] - t <= GAP_MS ? pointPosition(0) : null;
-
-    // upper-bound binary search
-    // last i where times[i] <= t
+  /**
+   * upper-bound binary search;
+   * last i where times[i] <= t; -1 if before the first point
+   */
+  const indexAt = (t: number): number => {
+    if (times.length === 0 || t < times[0]) return -1;
     let lo = 0;
     let hi = times.length - 1;
     while (lo < hi) {
@@ -115,7 +117,14 @@ export const makeTrack = (points: TrackPoint[], route?: Polyline) => {
       if (times[mid] <= t) lo = mid;
       else hi = mid - 1;
     }
-    const i = lo;
+    return lo;
+  };
+
+  const at = (t: number, isMotion = true): TrackPosition | null => {
+    if (points.length === 0) return null;
+    if (t < times[0]) return times[0] - t <= GAP_MS ? pointPosition(0) : null;
+
+    const i = indexAt(t);
     const j = i + 1;
 
     if (t === times[i] || !isMotion) {
@@ -153,7 +162,35 @@ export const makeTrack = (points: TrackPoint[], route?: Polyline) => {
     };
   };
 
-  return { times, at };
+  return { times, indexAt, at };
 };
 
 export type Track = ReturnType<typeof makeTrack>;
+
+export const pointMetrics = (
+  p: TrackPoint,
+  routeDistance: number,
+): Metric[] => {
+  const distance = p.distance ?? 0;
+  const rows = metrics(
+    {
+      vehicleId: 0,
+      tripId: 0,
+      routeId: 0,
+      distance,
+      speed: p.speed,
+      lat: p.lat,
+      lng: p.lng,
+      degree: p.degree,
+      progress: routeDistance > 0 ? Math.min(distance / routeDistance, 1) : 0,
+      done: false,
+      battery: p.battery,
+      fuel: p.fuel,
+      engineTemp: p.engineTemp,
+    },
+    routeDistance,
+  );
+  return p.distance === undefined
+    ? rows.filter((r) => r.label !== "Progress" && r.label !== "Remaining")
+    : rows;
+};

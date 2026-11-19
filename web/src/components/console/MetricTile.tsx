@@ -18,9 +18,10 @@ const SEVERITY_CLASS = {
 interface Props {
   metric: Metric;
   severity?: AlertSeverity;
+  isAnimated?: boolean;
 }
 
-export const MetricTile = ({ metric, severity }: Props) => {
+export const MetricTile = ({ metric, severity, isAnimated = true }: Props) => {
   const labelId = useId();
 
   const { gauge } = metric;
@@ -64,7 +65,7 @@ export const MetricTile = ({ metric, severity }: Props) => {
           >
             <div aria-hidden="true">
               {value}
-              <GaugeBar gauge={gauge} />
+              <GaugeBar gauge={gauge} isAnimated={isAnimated} />
             </div>
           </div>
         ) : (
@@ -75,7 +76,13 @@ export const MetricTile = ({ metric, severity }: Props) => {
   );
 };
 
-const GaugeBar = ({ gauge }: { gauge: Gauge }) => {
+const GaugeBar = ({
+  gauge,
+  isAnimated,
+}: {
+  gauge: Gauge;
+  isAnimated: boolean;
+}) => {
   const fill = gaugeFraction(gauge.value, gauge.min, gauge.max);
   const threshold = gauge.threshold;
   const at =
@@ -97,7 +104,11 @@ const GaugeBar = ({ gauge }: { gauge: Gauge }) => {
           )}
           {/* scaleX instead of width, 1s glide between ticks */}
           <div
-            className="absolute inset-0 origin-left bg-info transition-transform duration-1000 ease-linear motion-reduce:transition-none"
+            className={`absolute inset-0 origin-left bg-info ${
+              isAnimated
+                ? "transition-transform duration-1000 ease-linear motion-reduce:transition-none"
+                : ""
+            }`}
             style={{ transform: `scaleX(${fill})` }}
           />
         </div>

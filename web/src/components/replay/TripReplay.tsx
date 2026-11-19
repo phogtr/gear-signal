@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ReplayControls } from "./ReplayControls";
 import { ReplayLegend } from "./ReplayLegend";
 import { ReplayMap } from "./ReplayMap";
+import { ReplayMetrics } from "./ReplayMetrics";
 
 import { makePlayback } from "../../lib/playback";
 import { makeTrack, summarizeTrack } from "../../lib/replay";
@@ -60,7 +61,16 @@ export const TripReplay = ({ track, route, depots }: Props) => {
       </div>
 
       {summary.state === "ready" && (
-        <ReplayControls playback={playback} gaps={gaps} />
+        <>
+          <ReplayControls playback={playback} gaps={gaps} />
+          <ReplayMetrics
+            playback={playback}
+            track={model}
+            points={track.points}
+            start={summary.start}
+            routeDistance={route?.distance ?? 0}
+          />
+        </>
       )}
     </div>
   );
