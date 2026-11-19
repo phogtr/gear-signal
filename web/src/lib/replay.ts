@@ -1,6 +1,6 @@
 import { BACKFILL_RETRY_MS } from "./backfill";
 
-import { metrics, type Metric } from "./console";
+import { decimals, metrics, type Gauge, type Metric } from "./console";
 
 import type { TrackPoint, TripTrack } from "./api/client";
 import type { Polyline } from "./map/polyline";
@@ -194,3 +194,69 @@ export const pointMetrics = (
     ? rows.filter((r) => r.label !== "Progress" && r.label !== "Remaining")
     : rows;
 };
+
+export interface ChartSeries {
+  label: string;
+  unit: string;
+  digits: number;
+  gauge: Gauge;
+  values: (number | null)[];
+}
+
+export interface TripCharts {
+  x: number[]; // seconds since departure
+  series: ChartSeries[];
+}
+
+export const tripCharts = (
+  points: TrackPoint[],
+  start: number,
+  routeDistance: number,
+): TripCharts => {
+  if (points.length === 0) return { x: [], series: [] };
+
+  const specs = pointMetrics(points[0], routeDistance).filter((m) => m.gauge);
+  const x: number[] = [];
+  const values = specs.map((): (number | null)[] => []);
+  let prev: number | undefined;
+
+  for (const p of points) {
+    const t = Date.parse(p.ts);
+    if (prev !== undefined && t - prev > GAP_MS) {
+      x.push(((prev + t) / 2 - start) / 1000);
+      values.forEach((v) => v.push(null));
+    }
+    const rows = pointMetrics(p, routeDistance);
+    x.push((t - start) / 1000);
+    specs.forEach((spec, i) =>
+      values[i].push(
+        rows.find((r) => r.label === spec.label)?.gauge?.value ?? null,
+      ),
+    );
+    prev = t;
+  }
+
+  return {
+    x,
+    series: specs.map((spec, i) => ({
+      label: spec.label,
+      unit: spec.unit,
+      digits: decimals(spec.value),
+      gauge: spec.gauge!,
+      values: values[i],
+    })),
+  };
+};
+
+/** "Speed over the trip: 42 to 118 km/h" */
+export const tripChartSummary = (s: ChartSeries): string => {
+  const known = s.values.filter((v): v is number => v !== null);
+  if (known.length === 0) return `${s.label}: no data`;
+  const f = (v: number) => v.toFixed(s.digits);
+  return `${s.label} over the trip: ${f(Math.min(...known))} to ${f(Math.max(...known))} ${s.unit}`;
+};
+
+const TIME_STEPS_S = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
+
+export const timeStep = (durationS: number): number =>
+  TIME_STEPS_S.find((step) => durationS / step <= 8) ?? 3600;

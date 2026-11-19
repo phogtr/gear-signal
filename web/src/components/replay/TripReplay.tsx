@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { ReplayCharts } from "./ReplayCharts";
 import { ReplayControls } from "./ReplayControls";
 import { ReplayLegend } from "./ReplayLegend";
 import { ReplayMap } from "./ReplayMap";
 import { ReplayMetrics } from "./ReplayMetrics";
 
 import { makePlayback } from "../../lib/playback";
-import { makeTrack, summarizeTrack } from "../../lib/replay";
+import { makeTrack, summarizeTrack, tripCharts } from "../../lib/replay";
 import { makePolyline } from "../../lib/map/polyline";
 
 import type { Depot, Route, TripTrack } from "../../lib/api/client";
@@ -36,6 +37,11 @@ export const TripReplay = ({ track, route, depots }: Props) => {
     [summary],
   );
   const duration = summary.end - summary.start;
+  const routeDistance = route?.distance ?? 0;
+  const charts = useMemo(
+    () => tripCharts(track.points, summary.start, routeDistance),
+    [track.points, summary.start, routeDistance],
+  );
 
   useEffect(() => {
     playback.reset(duration);
@@ -68,7 +74,12 @@ export const TripReplay = ({ track, route, depots }: Props) => {
             track={model}
             points={track.points}
             start={summary.start}
-            routeDistance={route?.distance ?? 0}
+            routeDistance={routeDistance}
+          />
+          <ReplayCharts
+            playback={playback}
+            charts={charts}
+            duration={duration}
           />
         </>
       )}

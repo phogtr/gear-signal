@@ -14,8 +14,8 @@ import {
   decimals,
   metrics,
   type Metric,
-  type Threshold,
 } from "../../lib/console";
+import { CHART_FONT, drawThreshold, ySplits } from "../../lib/chart";
 import { themeColor } from "../../lib/theme";
 
 import type { AlertSeverity } from "../../lib/events";
@@ -24,7 +24,6 @@ import type { VehicleState } from "../../lib/ws/types";
 const WINDOW_S = 60;
 const HEIGHT = 120;
 const CAPACITY = WINDOW_S + 5;
-const FONT = `${10 * uPlot.pxRatio}px "Fira Code Variable", monospace`;
 
 interface Props {
   vehicleId: number;
@@ -108,7 +107,7 @@ export const TelemetryCharts = ({
           axes: [
             {
               stroke: colors.axis,
-              font: FONT,
+              font: CHART_FONT,
               grid: { stroke: colors.grid, width: 1 },
               ticks: { show: false },
               size: 20, // default 50px leaves a blank under the label
@@ -129,18 +128,11 @@ export const TelemetryCharts = ({
             },
             {
               stroke: colors.axis,
-              font: FONT,
+              font: CHART_FONT,
               size: 36,
               grid: { stroke: colors.grid, width: 1 },
               ticks: { show: false },
-              // 0, 50, 100
-              splits: (_u, _i, min, max) => {
-                const out = [];
-                for (let v = Math.ceil(min / 50) * 50; v <= max; v += 50) {
-                  out.push(v);
-                }
-                return out;
-              },
+              splits: ySplits,
             },
           ],
           series: [
@@ -157,14 +149,13 @@ export const TelemetryCharts = ({
                   ),
                 ]
               : [],
-            // hover: e.g. "45 s: 68 km/h"
+            // hover: "45 s: 68 km/h"
             setCursor: [
               (u) => {
-                const idx = u.cursor.idx;
-                const y = idx == null ? undefined : u.data[1][idx];
                 const caption = hoverCaption.current[i];
                 if (!caption) return;
-
+                const idx = u.cursor.idx;
+                const y = idx == null ? undefined : u.data[1][idx];
                 caption.textContent =
                   idx == null || y == null
                     ? ""
@@ -316,31 +307,3 @@ export const TelemetryCharts = ({
     </section>
   );
 };
-
-const drawThreshold =
-  (t: Threshold, color: string, textColor: string) => (u: uPlot) => {
-    const px = uPlot.pxRatio;
-    const y = Math.round(u.valToPos(t.value, "y", true)) + 0.5;
-    const { left, width } = u.bbox;
-    const ctx = u.ctx;
-
-    ctx.save();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = px;
-    ctx.setLineDash([4 * px, 4 * px]);
-    ctx.beginPath();
-    ctx.moveTo(left, y);
-    ctx.lineTo(left + width, y);
-    ctx.stroke();
-
-    ctx.fillStyle = textColor;
-    ctx.font = FONT;
-    ctx.textAlign = "right";
-    ctx.textBaseline = t.when === "above" ? "bottom" : "top";
-    ctx.fillText(
-      `alert ${t.when === "above" ? ">" : "<"} ${t.value}`,
-      left + width - 4 * px,
-      y + (t.when === "above" ? -3 : 3) * px,
-    );
-    ctx.restore();
-  };

@@ -7,6 +7,9 @@ import {
   makeTrack,
   pointMetrics,
   summarizeTrack,
+  timeStep,
+  tripChartSummary,
+  tripCharts,
 } from "../../lib/replay";
 import { makePolyline } from "../../lib/map/polyline";
 
@@ -263,5 +266,73 @@ describe("pointMetrics", () => {
       "Speed",
       "Battery",
     ]);
+  });
+});
+
+describe("tripCharts", () => {
+  const ev = (s: number, kmh: number, battery: number): TrackPoint => ({
+    ...point(s),
+    speed: kmh / 3.6,
+    battery,
+    distance: s * 100,
+  });
+
+  it("gives one series per gauge, x in seconds since departure", () => {
+    const c = tripCharts([ev(1, 36, 0.8), ev(2, 72, 0.79)], T0, 10_000);
+    expect(c.x).toEqual([1, 2]);
+    expect(c.series.map((s) => s.label)).toEqual(["Speed", "Battery"]);
+    expect(c.series[0].values[0]).toBeCloseTo(36, 9);
+    expect(c.series[0].values[1]).toBeCloseTo(72, 9);
+    expect(c.series[1].values[0]).toBeCloseTo(80, 9);
+    expect(c.series[1]).toMatchObject({ unit: "%", digits: 1 });
+  });
+
+  it("puts a null between points across a gap, so the line breaks", () => {
+    const c = tripCharts(
+      [ev(1, 36, 0.8), ev(2, 36, 0.8), ev(30, 54, 0.7), ev(31, 54, 0.7)],
+      T0,
+      10_000,
+    );
+    expect(c.x).toEqual([1, 2, 16, 30, 31]);
+    expect(c.series[0].values[2]).toBeNull();
+    expect(c.series[1].values[2]).toBeNull();
+    expect(c.series[0].values.filter((v) => v === null)).toHaveLength(1);
+  });
+
+  it("is empty without points", () => {
+    expect(tripCharts([], T0, 10_000)).toEqual({ x: [], series: [] });
+  });
+});
+
+describe("tripChartSummary", () => {
+  it("gives the range over the trip, ignoring gaps", () => {
+    const gauge = { value: 0, min: 0, max: 140 };
+    expect(
+      tripChartSummary({
+        label: "Speed",
+        unit: "km/h",
+        digits: 0,
+        gauge,
+        values: [42.4, null, 118.2, 60],
+      }),
+    ).toBe("Speed over the trip: 42 to 118 km/h");
+    expect(
+      tripChartSummary({
+        label: "Speed",
+        unit: "km/h",
+        digits: 0,
+        gauge,
+        values: [null],
+      }),
+    ).toBe("Speed: no data");
+  });
+});
+
+describe("timeStep", () => {
+  it("keeps the x axis to about 8 gridlines", () => {
+    expect(timeStep(40)).toBe(5);
+    expect(timeStep(86)).toBe(15);
+    expect(timeStep(150)).toBe(30);
+    expect(timeStep(4560)).toBe(600);
   });
 });
