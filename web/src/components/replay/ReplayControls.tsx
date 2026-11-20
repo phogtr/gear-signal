@@ -7,7 +7,8 @@ import {
   type PlaybackSpeed,
   type PlaybackState,
 } from "../../lib/playback";
-import { gapAt, type Gap } from "../../lib/replay";
+import { gapAt, type Gap, type ReplayAlert } from "../../lib/replay";
+import { SeverityLabel } from "../console/Severity";
 
 import { PauseIcon } from "../../icons/PauseIcon";
 import { PlayIcon } from "../../icons/PlayIcon";
@@ -15,6 +16,7 @@ import { PlayIcon } from "../../icons/PlayIcon";
 interface Props {
   playback: Playback;
   gaps: Gap[];
+  alerts?: ReplayAlert[];
 }
 
 const ARROW_STEP_MS = 5000;
@@ -42,7 +44,7 @@ const isSame = (a: View, b: View) =>
   a.speed === b.speed &&
   a.gap === b.gap;
 
-export const ReplayControls = ({ playback, gaps }: Props) => {
+export const ReplayControls = ({ playback, gaps, alerts = [] }: Props) => {
   const rangeRef = useRef<HTMLInputElement>(null);
   const [view, setView] = useState(() => toView(playback.get(), gaps));
 
@@ -162,6 +164,22 @@ export const ReplayControls = ({ playback, gaps }: Props) => {
               />
             ))}
         </div>
+
+        {duration > 0 && alerts.some((a) => a.severity !== "info") && (
+          <div aria-hidden="true" className="relative mx-2 mt-1 h-4 text-xs">
+            {alerts
+              .filter((a) => a.severity !== "info")
+              .map((a) => (
+                <span
+                  key={a.id}
+                  className="absolute top-0 -translate-x-1/2"
+                  style={{ left: `${(a.at / duration) * 100}%` }}
+                >
+                  <SeverityLabel severity={a.severity} isText={false} />
+                </span>
+              ))}
+          </div>
+        )}
       </div>
 
       <p className="min-h-4 text-xs text-warning tabular-nums">

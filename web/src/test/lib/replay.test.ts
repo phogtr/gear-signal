@@ -8,6 +8,7 @@ import {
   pointMetrics,
   summarizeTrack,
   timeStep,
+  tripAlerts,
   tripChartSummary,
   tripCharts,
 } from "../../lib/replay";
@@ -334,5 +335,22 @@ describe("timeStep", () => {
     expect(timeStep(86)).toBe(15);
     expect(timeStep(150)).toBe(30);
     expect(timeStep(4560)).toBe(600);
+  });
+});
+
+describe("tripAlerts", () => {
+  it("times events from departure, clamped to the trip", () => {
+    const events = [
+      { ...event(0, "warning"), ts: at(-1) },
+      event(30, "critical"),
+      { ...event(31, "info"), ts: at(60) },
+    ];
+    expect(
+      tripAlerts(events, T0, 50_000).map((a) => [a.id, a.at, a.severity]),
+    ).toEqual([
+      [0, 0, "warning"],
+      [30, 30_000, "critical"],
+      [31, 50_000, "info"],
+    ]);
   });
 });

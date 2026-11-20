@@ -86,4 +86,37 @@ describe("ReplayControls", () => {
     await userEvent.keyboard("{Home}");
     expect(playback.get().elapsed).toBe(0);
   });
+
+  it("marks raised alerts on the timeline, not clears", () => {
+    const playback = makePlayback();
+    playback.reset(100_000);
+    const { container } = render(
+      <ReplayControls
+        playback={playback}
+        gaps={[]}
+        alerts={[
+          {
+            id: 1,
+            at: 25_000,
+            severity: "critical",
+            code: "OVERHEAT",
+            message: "",
+          },
+          {
+            id: 2,
+            at: 60_000,
+            severity: "info",
+            code: "OVERHEAT",
+            message: "",
+          },
+        ]}
+      />,
+    );
+    const markers = container.querySelectorAll<HTMLElement>("[style*=left]");
+    expect(markers).toHaveLength(1);
+    expect(markers[0].style.left).toBe("25%");
+    expect(markers[0]).toHaveTextContent("Critical");
+    expect(markers[0].closest("[aria-hidden=true]")).not.toBeNull();
+    playback.dispose();
+  });
 });

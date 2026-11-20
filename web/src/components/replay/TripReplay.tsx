@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { ReplayMap } from "./ReplayMap";
 import { ReplayCharts } from "./ReplayCharts";
 import { ReplayControls } from "./ReplayControls";
+import { ReplayAlerts } from "./ReplayAlerts";
 import { ReplayLegend } from "./ReplayLegend";
-import { ReplayMap } from "./ReplayMap";
 import { ReplayMetrics } from "./ReplayMetrics";
 
 import { makePlayback } from "../../lib/playback";
-import { makeTrack, summarizeTrack, tripCharts } from "../../lib/replay";
+import {
+  makeTrack,
+  summarizeTrack,
+  tripAlerts,
+  tripCharts,
+} from "../../lib/replay";
 import { makePolyline } from "../../lib/map/polyline";
 
 import type { Depot, Route, TripTrack } from "../../lib/api/client";
@@ -42,6 +48,10 @@ export const TripReplay = ({ track, route, depots }: Props) => {
     () => tripCharts(track.points, summary.start, routeDistance),
     [track.points, summary.start, routeDistance],
   );
+  const alerts = useMemo(
+    () => tripAlerts(track.events, summary.start, duration),
+    [track.events, summary.start, duration],
+  );
 
   useEffect(() => {
     playback.reset(duration);
@@ -68,7 +78,8 @@ export const TripReplay = ({ track, route, depots }: Props) => {
 
       {summary.state === "ready" && (
         <>
-          <ReplayControls playback={playback} gaps={gaps} />
+          <ReplayControls playback={playback} gaps={gaps} alerts={alerts} />
+          <ReplayAlerts playback={playback} alerts={alerts} />
           <ReplayMetrics
             playback={playback}
             track={model}

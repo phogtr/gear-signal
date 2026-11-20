@@ -2,7 +2,7 @@ import { BACKFILL_RETRY_MS } from "./backfill";
 
 import { decimals, metrics, type Gauge, type Metric } from "./console";
 
-import type { TrackPoint, TripTrack } from "./api/client";
+import type { EventRecord, TrackPoint, TripTrack } from "./api/client";
 import type { Polyline } from "./map/polyline";
 
 export const GAP_MS = 1500;
@@ -260,3 +260,24 @@ const TIME_STEPS_S = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
 
 export const timeStep = (durationS: number): number =>
   TIME_STEPS_S.find((step) => durationS / step <= 8) ?? 3600;
+
+export interface ReplayAlert {
+  id: number;
+  at: number; // ms since departure
+  severity: EventRecord["severity"];
+  code: EventRecord["code"];
+  message: string;
+}
+
+export const tripAlerts = (
+  events: EventRecord[],
+  start: number,
+  duration: number,
+): ReplayAlert[] =>
+  events.map((e) => ({
+    id: e.id,
+    at: Math.min(Math.max(Date.parse(e.ts) - start, 0), duration),
+    severity: e.severity,
+    code: e.code,
+    message: e.message,
+  }));
