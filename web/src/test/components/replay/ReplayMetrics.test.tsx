@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { ReplayMetrics } from "../../../components/replay/ReplayMetrics";
 import { makePlayback } from "../../../lib/playback";
-import { makeTrack } from "../../../lib/replay";
+import { makeTrack, type ReplayAlert } from "../../../lib/replay";
 
 import type { TrackPoint } from "../../../lib/api/client";
 
@@ -22,6 +22,19 @@ const point = (s: number, kmh: number): TrackPoint => ({
 // recorded at 1, 2, 3 s, then a hole until 30 s
 const points = [point(1, 50), point(2, 60), point(3, 70), point(30, 80)];
 
+// speeding raised on the 2 s record, cleared on the 30 s one; deviation has no tile
+const alerts: ReplayAlert[] = [
+  { id: 1, at: 2_000, severity: "warning", code: "SPEEDING", message: "" },
+  {
+    id: 2,
+    at: 3_000,
+    severity: "critical",
+    code: "ROUTE_DEVIATION",
+    message: "",
+  },
+  { id: 3, at: 30_000, severity: "info", code: "SPEEDING", message: "" },
+];
+
 const setup = () => {
   const playback = makePlayback({
     now: () => 0,
@@ -36,10 +49,11 @@ const setup = () => {
       points={points}
       start={T0}
       routeDistance={4000}
+      alerts={alerts}
     />,
   );
   const speed = () =>
-    screen.getByRole("meter", { name: "Speed" }).getAttribute("aria-valuenow");
+    screen.getByRole("meter", { name: /^Speed/ }).getAttribute("aria-valuenow");
   return { playback, speed };
 };
 
@@ -73,5 +87,23 @@ describe("ReplayMetrics", () => {
     setup();
     const fill = document.querySelector(".origin-left");
     expect(fill?.className).not.toContain("transition");
+  });
+
+  it("marks a tile while its alert is raised at the record shown", () => {
+    const { playback } = setup();
+    const speedMeter = () => screen.getByRole("meter", { name: /^Speed/ });
+    expect(speedMeter()).toHaveAccessibleName("Speed");
+    act(() => playback.seek(1_900));
+    expect(speedMeter()).toHaveAccessibleName("Speed");
+    act(() => playback.seek(2_000));
+    expect(speedMeter()).toHaveAccessibleName("Speed Warning");
+    // in the gap the 3 s record is shown, still speeding
+    act(() => playback.seek(15_000));
+    expect(speedMeter()).toHaveAccessibleName("Speed Warning");
+    act(() => playback.seek(30_000));
+    expect(speedMeter()).toHaveAccessibleName("Speed");
+    expect(
+      screen.getByRole("meter", { name: /^Battery/ }),
+    ).toHaveAccessibleName("Battery");
   });
 });

@@ -2,11 +2,18 @@ import { useEffect, useState } from "react";
 
 import { MetricTile } from "../console/MetricTile";
 
-import { pointMetrics, type Track } from "../../lib/replay";
+import { ALERT_METRIC } from "../../constants/console";
+import {
+  pointMetrics,
+  raisedAt,
+  type ReplayAlert,
+  type Track,
+} from "../../lib/replay";
 import { formatPlayTime } from "../../lib/format";
 
 import type { Playback } from "../../lib/playback";
 import type { TrackPoint } from "../../lib/api/client";
+import type { AlertSeverity } from "../../lib/events";
 
 interface Props {
   playback: Playback;
@@ -14,6 +21,7 @@ interface Props {
   points: TrackPoint[];
   start: number;
   routeDistance: number;
+  alerts: ReplayAlert[];
 }
 
 interface View {
@@ -32,6 +40,7 @@ export const ReplayMetrics = ({
   points,
   start,
   routeDistance,
+  alerts,
 }: Props) => {
   const [view, setView] = useState(() =>
     viewAt(track, start + playback.get().elapsed),
@@ -52,7 +61,14 @@ export const ReplayMetrics = ({
   const index = Math.max(view.index, 0);
   const point = points[index];
   if (!point) return null;
-  const at = formatPlayTime(track.times[index] - start);
+  const pointAt = track.times[index] - start;
+  const at = formatPlayTime(pointAt);
+
+  const severityByLabel = new Map<string, AlertSeverity>();
+  for (const [code, severity] of raisedAt(alerts, pointAt)) {
+    const label = ALERT_METRIC[code];
+    if (label) severityByLabel.set(label, severity);
+  }
 
   return (
     <section
@@ -69,7 +85,12 @@ export const ReplayMetrics = ({
         className={`grid grid-cols-2 gap-2 sm:grid-cols-3 ${view.isGap ? "opacity-50" : ""}`}
       >
         {pointMetrics(point, routeDistance).map((m) => (
-          <MetricTile key={m.label} metric={m} isAnimated={false} />
+          <MetricTile
+            key={m.label}
+            metric={m}
+            severity={severityByLabel.get(m.label)}
+            isAnimated={false}
+          />
         ))}
       </dl>
     </section>

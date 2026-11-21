@@ -86,6 +86,7 @@ export const TripReplay = ({ track, route, depots }: Props) => {
             points={track.points}
             start={summary.start}
             routeDistance={routeDistance}
+            alerts={alerts}
           />
           <ReplayCharts
             playback={playback}

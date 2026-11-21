@@ -3,6 +3,7 @@ import { BACKFILL_RETRY_MS } from "./backfill";
 import { decimals, metrics, type Gauge, type Metric } from "./console";
 
 import type { EventRecord, TrackPoint, TripTrack } from "./api/client";
+import type { AlertSeverity } from "./events";
 import type { Polyline } from "./map/polyline";
 
 export const GAP_MS = 1500;
@@ -281,3 +282,17 @@ export const tripAlerts = (
     code: e.code,
     message: e.message,
   }));
+
+export const raisedAt = (
+  alerts: ReplayAlert[],
+  t: number,
+): Map<EventRecord["code"], AlertSeverity> => {
+  const newest = new Map<EventRecord["code"], EventRecord["severity"]>();
+  for (const a of alerts) if (a.at <= t) newest.set(a.code, a.severity);
+
+  const raised = new Map<EventRecord["code"], AlertSeverity>();
+  for (const [code, severity] of newest) {
+    if (severity !== "info") raised.set(code, severity);
+  }
+  return raised;
+};

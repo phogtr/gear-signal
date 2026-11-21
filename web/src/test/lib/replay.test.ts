@@ -6,6 +6,7 @@ import {
   isJustFinished,
   makeTrack,
   pointMetrics,
+  raisedAt,
   summarizeTrack,
   timeStep,
   tripAlerts,
@@ -351,6 +352,37 @@ describe("tripAlerts", () => {
       [0, 0, "warning"],
       [30, 30_000, "critical"],
       [31, 50_000, "info"],
+    ]);
+  });
+});
+
+describe("raisedAt", () => {
+  const alert = (
+    id: number,
+    at: number,
+    code: EventRecord["code"],
+    severity: EventRecord["severity"],
+  ) => ({ id, at, code, severity, message: "" });
+  const alerts = [
+    alert(1, 10_000, "SPEEDING", "warning"),
+    alert(2, 20_000, "ROUTE_DEVIATION", "critical"),
+    alert(3, 30_000, "SPEEDING", "info"),
+    alert(4, 30_000, "BATTERY_LOW", "warning"),
+  ];
+
+  it("raises from the event's time, inclusive", () => {
+    expect(raisedAt(alerts, 9_999).size).toBe(0);
+    expect([...raisedAt(alerts, 10_000)]).toEqual([["SPEEDING", "warning"]]);
+  });
+
+  it("drops an alert once it clears, keeps one that never does", () => {
+    expect([...raisedAt(alerts, 25_000)]).toEqual([
+      ["SPEEDING", "warning"],
+      ["ROUTE_DEVIATION", "critical"],
+    ]);
+    expect([...raisedAt(alerts, 60_000)]).toEqual([
+      ["ROUTE_DEVIATION", "critical"],
+      ["BATTERY_LOW", "warning"],
     ]);
   });
 });
