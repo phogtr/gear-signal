@@ -20,7 +20,10 @@ const STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
 
 export const LA: [number, number] = [-118.33, 33.97];
 
-export const createMap = (container: HTMLElement): MapLibreMap => {
+export const createMap = (
+  container: HTMLElement,
+  { hasZoomControl = true } = {},
+): MapLibreMap => {
   const map = new MapLibreMap({
     container,
     style: STYLE_URL,
@@ -31,7 +34,9 @@ export const createMap = (container: HTMLElement): MapLibreMap => {
   });
   // credits (OpenFreeMap, OpenMapTiles, OpenStreetMap)
   map.addControl(new AttributionControl({ compact: true }));
-  map.addControl(new NavigationControl({ showCompass: false }), "top-right");
+  if (hasZoomControl) {
+    map.addControl(new NavigationControl({ showCompass: false }), "top-right");
+  }
   map.on("load", () => applyTheme(map));
   return map;
 };

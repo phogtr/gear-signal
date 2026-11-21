@@ -1,10 +1,12 @@
 import { useCallback, useState } from "react";
+import type { Map as MapLibreMap } from "maplibre-gl";
 
 import { CoreMap } from "../../../components/map/CoreMap";
 import { MapLegend } from "../../../components/map/MapLegend";
 import { SocketStatus } from "../../../components/map/SocketStatus";
 import { VehicleDetail } from "../../../components/map/VehicleDetail";
 import { VehicleList } from "../../../components/map/VehicleList";
+import { ZoomControls } from "../../../components/map/ZoomControls";
 
 import {
   useActiveTrips,
@@ -30,6 +32,7 @@ export const MapPage = () => {
 
   const [isListOpen, setIsListOpen] = useState(true);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [map, setMap] = useState<MapLibreMap | null>(null);
 
   const clearSelection = useCallback(() => setSelectedId(null), []);
 
@@ -53,6 +56,7 @@ export const MapPage = () => {
           selectedRouteId={selectedRouteId}
           alertByTripId={alertByTripId}
           onSelect={setSelectedId}
+          onMap={setMap}
         />
 
         <div className="absolute inset-x-3 bottom-16 flex flex-col gap-2 pointer-events-none sm:contents">
@@ -91,23 +95,27 @@ export const MapPage = () => {
           )}
         </div>
 
-        <button
-          type="button"
-          aria-label="Vehicle list"
-          aria-expanded={isListOpen}
-          aria-controls="vehicle-list"
-          title={isListOpen ? "Hide vehicle list" : "Show vehicle list"}
-          onClick={() => setIsListOpen((open) => !open)}
-          className={`absolute top-8 left-1/2 hidden -translate-x-1/2 p-2 items-center justify-center rounded-lg border shadow-xs transition-colors focus-visible:outline-2 focus-visible:outline-primary md:flex [&_svg]:size-5 ${
-            isListOpen
-              ? "border-border bg-card text-primary"
-              : "border-border bg-card text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <span aria-hidden="true" className="flex">
-            <NotebookTabIcon />
-          </span>
-        </button>
+        <div className="absolute top-3 right-3 flex gap-2 md:top-8 md:right-auto md:left-1/2 md:-translate-x-1/2">
+          <button
+            type="button"
+            aria-label="Vehicle list"
+            aria-expanded={isListOpen}
+            aria-controls="vehicle-list"
+            title={isListOpen ? "Hide vehicle list" : "Show vehicle list"}
+            onClick={() => setIsListOpen((open) => !open)}
+            className={`hidden p-2 items-center justify-center rounded-lg border shadow-xs transition-colors focus-visible:outline-2 focus-visible:outline-primary md:flex [&_svg]:size-5 ${
+              isListOpen
+                ? "border-border bg-card text-primary"
+                : "border-border bg-card text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <span aria-hidden="true" className="flex">
+              <NotebookTabIcon />
+            </span>
+          </button>
+
+          <ZoomControls map={map} />
+        </div>
       </div>
 
       <div

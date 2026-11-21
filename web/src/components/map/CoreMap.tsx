@@ -41,6 +41,7 @@ interface Props {
   selectedRouteId: number | null;
   alertByTripId: Map<number, ActiveAlert[]>;
   onSelect: (id: number | null) => void;
+  onMap: (map: MapLibreMap | null) => void;
 }
 
 // click within this pixel of vehicle select it (dots are 7 px)
@@ -55,6 +56,7 @@ export const CoreMap = ({
   selectedRouteId,
   alertByTripId,
   onSelect,
+  onMap,
 }: Props) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -65,6 +67,7 @@ export const CoreMap = ({
   const dataRef = useRef({ depots, vehicles });
   const polylinesRef = useRef(new Map<number, Polyline>());
   const onSelectRef = useRef(onSelect);
+  const onMapRef = useRef(onMap);
   const alertsRef = useRef(alertByTripId);
   const isStaleRef = useRef(true);
 
@@ -72,7 +75,7 @@ export const CoreMap = ({
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const map = createMap(containerRef.current);
+    const map = createMap(containerRef.current, { hasZoomControl: false });
 
     map.on("load", () => {
       addTriangleIcon(map);
@@ -103,8 +106,11 @@ export const CoreMap = ({
     );
 
     mapRef.current = map;
+    const setMap = onMapRef.current;
+    setMap(map);
 
     return () => {
+      setMap(null);
       map.remove();
       mapRef.current = null;
       setReady(false);
