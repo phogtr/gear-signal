@@ -2,7 +2,10 @@ import uPlot from "uplot";
 
 import type { Threshold } from "./console";
 
-export const CHART_FONT = `${10 * uPlot.pxRatio}px "Fira Code Variable", monospace`;
+const FONT_PX = 10;
+const FONT_FAMILY = `"Fira Code Variable", monospace`;
+
+export const CHART_FONT = `${FONT_PX}px ${FONT_FAMILY}`;
 
 export const ySplits = (_u: uPlot, _i: number, min: number, max: number) => {
   const out = [];
@@ -27,7 +30,7 @@ export const drawThreshold =
     ctx.stroke();
 
     ctx.fillStyle = textColor;
-    ctx.font = CHART_FONT;
+    ctx.font = `${FONT_PX * px}px ${FONT_FAMILY}`;
     ctx.textAlign = "right";
     ctx.textBaseline = t.when === "above" ? "bottom" : "top";
     ctx.fillText(
