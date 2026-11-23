@@ -124,7 +124,7 @@ export const VehicleList = ({
                   {/* min-w-0 lets flex item shrink so truncate can ellipsize; 
                       shows full text on hover */}
                   <span className="min-w-0 truncate" title={where}>
-                    {where ?? "—"}
+                    {where ?? "-"}
                   </span>
                   {percent !== undefined && (
                     <span className="ml-auto shrink-0 tabular-nums">

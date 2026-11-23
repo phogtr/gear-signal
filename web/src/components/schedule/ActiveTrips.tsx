@@ -42,7 +42,7 @@ export const ActiveTrips = ({ trips, source, labels }: Props) => {
       cell: (t) => {
         const p = progress.get(t.id);
         if (p === undefined)
-          return <span className="text-muted-foreground">—</span>;
+          return <span className="text-muted-foreground">-</span>;
         const percent = Math.round(p * 100);
         return (
           <div className="flex items-center gap-2">
@@ -72,7 +72,7 @@ export const ActiveTrips = ({ trips, source, labels }: Props) => {
             </span>
           </span>
         ) : (
-          <span className="text-muted-foreground">—</span>
+          <span className="text-muted-foreground">-</span>
         ),
     },
   ];

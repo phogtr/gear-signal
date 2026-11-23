@@ -61,7 +61,7 @@ export const ActiveVehiclePicker = ({
       <ul className="max-h-56 min-h-0 overflow-y-auto md:max-h-none md:flex-1">
         {rows.map(({ vehicle, state }) => {
           const route = routeById.get(state.routeId);
-          const where = route ? routeLabel(route, depots) : "—";
+          const where = route ? routeLabel(route, depots) : "-";
           const percent = Math.round(state.progress * 100);
           const isSelected = vehicle.id === selectedId;
           const severity = getSeverity(alertByTripId.get(state.tripId));

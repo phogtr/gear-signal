@@ -73,7 +73,7 @@ describe("ActiveTrips", () => {
       screen.getByRole("table", { name: "Active" }),
     );
     expect(first).toContain("42%");
-    expect(second).toContain("—");
+    expect(second).toContain("-");
   });
 
   it("filters to planned trips, with its own empty state", () => {

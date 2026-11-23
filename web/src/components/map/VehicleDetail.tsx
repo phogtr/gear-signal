@@ -72,7 +72,7 @@ export const VehicleDetail = ({
     }
   } else if (vehicle.status !== "en_route") {
     rows.push(
-      ["Depot", depotName(vehicle.depotId) ?? "—"],
+      ["Depot", depotName(vehicle.depotId) ?? "-"],
       [resLabel(vehicle.type), `${Math.round(resAt(vehicle, now) * 100)}%`],
     );
     if (vehicle.charging) rows.push(["Charge", chargeText(vehicle, now)]);
